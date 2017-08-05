@@ -9,16 +9,16 @@
 import {InjectionToken, MissingTranslationStrategy, ViewEncapsulation, isDevMode} from '@angular/core';
 
 import {CompileIdentifierMetadata} from './compile_metadata';
-import {Identifiers, createIdentifier} from './identifiers';
+import {Identifiers} from './identifiers';
 
 
 export class CompilerConfig {
-  public defaultEncapsulation: ViewEncapsulation;
+  public defaultEncapsulation: ViewEncapsulation|null;
   // Whether to support the `<template>` tag and the `template` attribute to define angular
   // templates. They have been deprecated in 4.x, `<ng-template>` should be used instead.
   public enableLegacyTemplate: boolean;
   public useJit: boolean;
-  public missingTranslation: MissingTranslationStrategy;
+  public missingTranslation: MissingTranslationStrategy|null;
 
   constructor(
       {defaultEncapsulation = ViewEncapsulation.Emulated, useJit = true, missingTranslation,
@@ -29,8 +29,8 @@ export class CompilerConfig {
         enableLegacyTemplate?: boolean,
       } = {}) {
     this.defaultEncapsulation = defaultEncapsulation;
-    this.useJit = useJit;
-    this.missingTranslation = missingTranslation;
+    this.useJit = !!useJit;
+    this.missingTranslation = missingTranslation || null;
     this.enableLegacyTemplate = enableLegacyTemplate !== false;
   }
 }

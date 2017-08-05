@@ -8,7 +8,7 @@
  */
 
 
-// Must be imported first, because angular2 decorators throws on load.
+// Must be imported first, because Angular decorators throw on load.
 import 'reflect-metadata';
 
 import * as ts from 'typescript';
@@ -20,6 +20,10 @@ import {CodeGenerator} from './codegen';
 function codegen(
     ngOptions: tsc.AngularCompilerOptions, cliOptions: tsc.NgcCliOptions, program: ts.Program,
     host: ts.CompilerHost) {
+  if (ngOptions.enableSummariesForJit === undefined) {
+    // default to false
+    ngOptions.enableSummariesForJit = false;
+  }
   return CodeGenerator.create(ngOptions, cliOptions, program, host).codegen();
 }
 

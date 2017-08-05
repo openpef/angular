@@ -26,7 +26,7 @@ export declare function animate(timings: string | number, styles?: AnimationStyl
 
 /** @deprecated */
 export interface AnimationAnimateMetadata extends AnimationMetadata {
-    styles: AnimationStyleMetadata | AnimationKeyframesSequenceMetadata;
+    styles: AnimationStyleMetadata | AnimationKeyframesSequenceMetadata | null;
     timings: string | number | AnimateTimings;
 }
 
@@ -70,12 +70,12 @@ export declare type AnimationStateTransitionMetadata = any;
 
 /** @deprecated */
 export interface AnimationStyleMetadata extends AnimationMetadata {
-    offset?: number;
-    styles: {
+    offset: number | null;
+    styles: '*' | {
         [key: string]: string | number;
-    } | {
+    } | Array<{
         [key: string]: string | number;
-    }[];
+    } | '*'>;
 }
 
 /** @deprecated */
@@ -131,7 +131,7 @@ export declare abstract class ApplicationRef {
     readonly abstract isStable: Observable<boolean>;
     readonly abstract viewCount: number;
     abstract attachView(view: ViewRef): void;
-    abstract bootstrap<C>(componentFactory: ComponentFactory<C> | Type<C>): ComponentRef<C>;
+    abstract bootstrap<C>(componentFactory: ComponentFactory<C> | Type<C>, rootSelectorOrNode?: string | any): ComponentRef<C>;
     abstract detachView(view: ViewRef): void;
     abstract tick(): void;
 }
@@ -262,10 +262,10 @@ export declare const ContentChild: ContentChildDecorator;
 
 /** @stable */
 export interface ContentChildDecorator {
-    /** @stable */ (selector: Type<any> | Function | string, {read}?: {
+    /** @stable */ (selector: Type<any> | Function | string, opts?: {
         read?: any;
     }): any;
-    new (selector: Type<any> | Function | string, {read}?: {
+    new (selector: Type<any> | Function | string, opts?: {
         read?: any;
     }): ContentChild;
 }
@@ -275,11 +275,11 @@ export declare const ContentChildren: ContentChildrenDecorator;
 
 /** @stable */
 export interface ContentChildrenDecorator {
-    /** @stable */ (selector: Type<any> | Function | string, {descendants, read}?: {
+    /** @stable */ (selector: Type<any> | Function | string, opts?: {
         descendants?: boolean;
         read?: any;
     }): any;
-    new (selector: Type<any> | Function | string, {descendants, read}?: {
+    new (selector: Type<any> | Function | string, opts?: {
         descendants?: boolean;
         read?: any;
     }): Query;
@@ -289,7 +289,7 @@ export interface ContentChildrenDecorator {
 export declare function createPlatform(injector: Injector): PlatformRef;
 
 /** @experimental */
-export declare function createPlatformFactory(parentPlatformFactory: (extraProviders?: Provider[]) => PlatformRef, name: string, providers?: Provider[]): (extraProviders?: Provider[]) => PlatformRef;
+export declare function createPlatformFactory(parentPlatformFactory: ((extraProviders?: Provider[]) => PlatformRef) | null, name: string, providers?: Provider[]): (extraProviders?: Provider[]) => PlatformRef;
 
 /** @stable */
 export declare const CUSTOM_ELEMENTS_SCHEMA: SchemaMetadata;
@@ -297,7 +297,7 @@ export declare const CUSTOM_ELEMENTS_SCHEMA: SchemaMetadata;
 /** @experimental */
 export declare class DebugElement extends DebugNode {
     attributes: {
-        [key: string]: string;
+        [key: string]: string | null;
     };
     childNodes: DebugNode[];
     readonly children: DebugElement[];
@@ -310,7 +310,7 @@ export declare class DebugElement extends DebugNode {
         [key: string]: any;
     };
     styles: {
-        [key: string]: string;
+        [key: string]: string | null;
     };
     constructor(nativeNode: any, parent: any, _debugContext: DebugContext);
     addChild(child: DebugNode): void;
@@ -330,28 +330,28 @@ export declare class DebugNode {
     readonly injector: Injector;
     listeners: EventListener[];
     nativeNode: any;
-    parent: DebugElement;
+    parent: DebugElement | null;
     readonly providerTokens: any[];
     readonly references: {
         [key: string]: any;
     };
     /** @deprecated */ readonly source: string;
-    constructor(nativeNode: any, parent: DebugNode, _debugContext: DebugContext);
+    constructor(nativeNode: any, parent: DebugNode | null, _debugContext: DebugContext);
 }
 
 /** @deprecated */
 export declare class DefaultIterableDiffer<V> implements IterableDiffer<V>, IterableChanges<V> {
-    readonly collection: NgIterable<V>;
+    readonly collection: V[] | Iterable<V> | null;
     readonly isDirty: boolean;
     readonly length: number;
-    constructor(_trackByFn?: TrackByFunction<V>);
+    constructor(trackByFn?: TrackByFunction<V>);
     check(collection: NgIterable<V>): boolean;
-    diff(collection: NgIterable<V>): DefaultIterableDiffer<V>;
+    diff(collection: NgIterable<V>): DefaultIterableDiffer<V> | null;
     forEachAddedItem(fn: (record: IterableChangeRecord_<V>) => void): void;
     forEachIdentityChange(fn: (record: IterableChangeRecord_<V>) => void): void;
     forEachItem(fn: (record: IterableChangeRecord_<V>) => void): void;
     forEachMovedItem(fn: (record: IterableChangeRecord_<V>) => void): void;
-    forEachOperation(fn: (item: IterableChangeRecord_<V>, previousIndex: number, currentIndex: number) => void): void;
+    forEachOperation(fn: (item: IterableChangeRecord<V>, previousIndex: number | null, currentIndex: number | null) => void): void;
     forEachPreviousItem(fn: (record: IterableChangeRecord_<V>) => void): void;
     forEachRemovedItem(fn: (record: IterableChangeRecord_<V>) => void): void;
     onDestroy(): void;
@@ -429,18 +429,18 @@ export interface ForwardRefFn {
 }
 
 /** @experimental */
-export declare function getDebugNode(nativeNode: any): DebugNode;
+export declare function getDebugNode(nativeNode: any): DebugNode | null;
 
 /** @experimental */
 export declare function getModuleFactory(id: string): NgModuleFactory<any>;
 
 /** @experimental */
-export declare function getPlatform(): PlatformRef;
+export declare function getPlatform(): PlatformRef | null;
 
 /** @experimental */
 export interface GetTestability {
     addToWindow(registry: TestabilityRegistry): void;
-    findTestabilityInTree(registry: TestabilityRegistry, elem: any, findInAncestors: boolean): Testability;
+    findTestabilityInTree(registry: TestabilityRegistry, elem: any, findInAncestors: boolean): Testability | null;
 }
 
 /** @deprecated */
@@ -501,10 +501,10 @@ export declare function isDevMode(): boolean;
 
 /** @stable */
 export interface IterableChangeRecord<V> {
-    currentIndex: number;
-    item: V;
-    previousIndex: number;
-    trackById: any;
+    readonly currentIndex: number | null;
+    readonly item: V;
+    readonly previousIndex: number | null;
+    readonly trackById: any;
 }
 
 /** @stable */
@@ -520,7 +520,7 @@ export interface IterableChanges<V> {
 
 /** @stable */
 export interface IterableDiffer<V> {
-    diff(object: NgIterable<V>): IterableChanges<V>;
+    diff(object: NgIterable<V>): IterableChanges<V> | null;
 }
 
 /** @stable */
@@ -544,9 +544,9 @@ export declare function keyframes(steps: AnimationStyleMetadata[]): AnimationKey
 
 /** @stable */
 export interface KeyValueChangeRecord<K, V> {
-    currentValue: V;
-    key: K;
-    previousValue: V;
+    readonly currentValue: V | null;
+    readonly key: K;
+    readonly previousValue: V | null;
 }
 
 /** @stable */
@@ -612,12 +612,9 @@ export declare type NgIterable<T> = Array<T> | Iterable<T>;
 export declare const NgModule: NgModuleDecorator;
 
 /** @experimental */
-export declare class NgModuleFactory<T> {
-    readonly moduleType: Type<T>;
-    constructor(_injectorClass: {
-        new (parentInjector: Injector): NgModuleInjector<T>;
-    }, _moduleType: Type<T>);
-    create(parentInjector: Injector): NgModuleRef<T>;
+export declare abstract class NgModuleFactory<T> {
+    readonly abstract moduleType: Type<T>;
+    abstract create(parentInjector: Injector | null): NgModuleRef<T>;
 }
 
 /** @stable */
@@ -653,9 +650,10 @@ export declare class NgZone {
     constructor({enableLongStackTrace}: {
         enableLongStackTrace?: boolean;
     });
-    run(fn: () => any): any;
-    runGuarded(fn: () => any): any;
-    runOutsideAngular(fn: () => any): any;
+    run<T>(fn: (...args: any[]) => T, applyThis?: any, applyArgs?: any[]): T;
+    runGuarded<T>(fn: (...args: any[]) => T, applyThis?: any, applyArgs?: any[]): T;
+    runOutsideAngular<T>(fn: (...args: any[]) => T): T;
+    runTask<T>(fn: (...args: any[]) => T, applyThis?: any, applyArgs?: any[], name?: string): T;
     static assertInAngularZone(): void;
     static assertNotInAngularZone(): void;
     static isInAngularZone(): boolean;
@@ -716,7 +714,7 @@ export declare const PLATFORM_ID: InjectionToken<Object>;
 export declare const PLATFORM_INITIALIZER: InjectionToken<(() => void)[]>;
 
 /** @experimental */
-export declare const platformCore: (extraProviders?: Provider[]) => PlatformRef;
+export declare const platformCore: (extraProviders?: Provider[] | undefined) => PlatformRef;
 
 /** @stable */
 export declare abstract class PlatformRef {
@@ -730,7 +728,7 @@ export declare abstract class PlatformRef {
 
 /** @experimental */
 export interface Predicate<T> {
-    (value: T, index?: number, array?: T[]): boolean;
+    (value: T): boolean;
 }
 
 /** @stable */
@@ -748,7 +746,7 @@ export declare class QueryList<T> {
     readonly last: T;
     readonly length: number;
     filter(fn: (item: T, index: number, array: T[]) => boolean): T[];
-    find(fn: (item: T, index: number, array: T[]) => boolean): T;
+    find(fn: (item: T, index: number, array: T[]) => boolean): T | undefined;
     forEach(fn: (item: T, index: number, array: T[]) => void): void;
     map<U>(fn: (item: T, index: number, array: T[]) => U): U[];
     notifyOnChanges(): void;
@@ -762,7 +760,7 @@ export declare class QueryList<T> {
 
 /** @stable */
 export declare abstract class ReflectiveInjector implements Injector {
-    readonly abstract parent: Injector;
+    readonly abstract parent: Injector | null;
     abstract createChildFromResolved(providers: ResolvedReflectiveProvider[]): ReflectiveInjector;
     abstract get(token: any, notFoundValue?: any): any;
     abstract instantiateResolved(provider: ResolvedReflectiveProvider): any;
@@ -822,23 +820,23 @@ export declare abstract class Renderer2 {
     readonly abstract data: {
         [key: string]: any;
     };
-    destroyNode: (node: any) => void | null;
+    destroyNode: ((node: any) => void) | null;
     abstract addClass(el: any, name: string): void;
     abstract appendChild(parent: any, newChild: any): void;
     abstract createComment(value: string): any;
-    abstract createElement(name: string, namespace?: string): any;
+    abstract createElement(name: string, namespace?: string | null): any;
     abstract createText(value: string): any;
     abstract destroy(): void;
     abstract insertBefore(parent: any, newChild: any, refChild: any): void;
     abstract listen(target: 'window' | 'document' | 'body' | any, eventName: string, callback: (event: any) => boolean | void): () => void;
     abstract nextSibling(node: any): any;
     abstract parentNode(node: any): any;
-    abstract removeAttribute(el: any, name: string, namespace?: string): void;
+    abstract removeAttribute(el: any, name: string, namespace?: string | null): void;
     abstract removeChild(parent: any, oldChild: any): void;
     abstract removeClass(el: any, name: string): void;
     abstract removeStyle(el: any, style: string, flags?: RendererStyleFlags2): void;
     abstract selectRootElement(selectorOrNode: string | any): any;
-    abstract setAttribute(el: any, name: string, value: string, namespace?: string): void;
+    abstract setAttribute(el: any, name: string, value: string, namespace?: string | null): void;
     abstract setProperty(el: any, name: string, value: any): void;
     abstract setStyle(el: any, style: string, value: any, flags?: RendererStyleFlags2): void;
     abstract setValue(node: any, value: string): void;
@@ -846,7 +844,10 @@ export declare abstract class Renderer2 {
 
 /** @experimental */
 export declare abstract class RendererFactory2 {
-    abstract createRenderer(hostElement: any, type: RendererType2): Renderer2;
+    abstract begin?(): void;
+    abstract createRenderer(hostElement: any, type: RendererType2 | null): Renderer2;
+    abstract end?(): void;
+    abstract whenRenderingDone?(): Promise<any>;
 }
 
 /** @experimental */
@@ -891,7 +892,7 @@ export declare abstract class RootRenderer {
 
 /** @stable */
 export declare abstract class Sanitizer {
-    abstract sanitize(context: SecurityContext, value: string): string;
+    abstract sanitize(context: SecurityContext, value: {} | string | null): string | null;
 }
 
 /** @experimental */
@@ -990,10 +991,10 @@ export declare class Testability implements PublicTestability {
 /** @experimental */
 export declare class TestabilityRegistry {
     constructor();
-    findTestabilityInTree(elem: Node, findInAncestors?: boolean): Testability;
+    findTestabilityInTree(elem: Node, findInAncestors?: boolean): Testability | null;
     getAllRootElements(): any[];
     getAllTestabilities(): Testability[];
-    getTestability(elem: any): Testability;
+    getTestability(elem: any): Testability | null;
     registerApplication(token: any, testability: Testability): void;
 }
 
@@ -1008,7 +1009,7 @@ export interface TrackByFunction<T> {
 }
 
 /** @deprecated */
-export declare function transition(stateChangeExpr: string | ((fromState: string, toState: string) => boolean), steps: AnimationMetadata | AnimationMetadata[]): AnimationTransitionMetadata;
+export declare function transition(stateChangeExpr: string, steps: AnimationMetadata | AnimationMetadata[]): AnimationTransitionMetadata;
 
 /** @experimental */
 export declare const TRANSLATIONS: InjectionToken<string>;
@@ -1058,10 +1059,10 @@ export declare const ViewChild: ViewChildDecorator;
 
 /** @stable */
 export interface ViewChildDecorator {
-    /** @stable */ (selector: Type<any> | Function | string, {read}?: {
+    /** @stable */ (selector: Type<any> | Function | string, opts?: {
         read?: any;
     }): any;
-    new (selector: Type<any> | Function | string, {read}?: {
+    new (selector: Type<any> | Function | string, opts?: {
         read?: any;
     }): ViewChild;
 }
@@ -1071,10 +1072,10 @@ export declare const ViewChildren: ViewChildrenDecorator;
 
 /** @stable */
 export interface ViewChildrenDecorator {
-    /** @stable */ (selector: Type<any> | Function | string, {read}?: {
+    /** @stable */ (selector: Type<any> | Function | string, opts?: {
         read?: any;
     }): any;
-    new (selector: Type<any> | Function | string, {read}?: {
+    new (selector: Type<any> | Function | string, opts?: {
         read?: any;
     }): ViewChildren;
 }
@@ -1088,8 +1089,8 @@ export declare abstract class ViewContainerRef {
     abstract clear(): void;
     abstract createComponent<C>(componentFactory: ComponentFactory<C>, index?: number, injector?: Injector, projectableNodes?: any[][], ngModule?: NgModuleRef<any>): ComponentRef<C>;
     abstract createEmbeddedView<C>(templateRef: TemplateRef<C>, context?: C, index?: number): EmbeddedViewRef<C>;
-    abstract detach(index?: number): ViewRef;
-    abstract get(index: number): ViewRef;
+    abstract detach(index?: number): ViewRef | null;
+    abstract get(index: number): ViewRef | null;
     abstract indexOf(viewRef: ViewRef): number;
     abstract insert(viewRef: ViewRef, index?: number): ViewRef;
     abstract move(viewRef: ViewRef, currentIndex: number): ViewRef;

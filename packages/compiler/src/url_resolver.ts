@@ -49,7 +49,7 @@ export const DEFAULT_PACKAGE_URL_PROVIDER = {
  */
 @CompilerInjectable()
 export class UrlResolver {
-  constructor(@Inject(PACKAGE_ROOT_URL) private _packagePrefix: string = null) {}
+  constructor(@Inject(PACKAGE_ROOT_URL) private _packagePrefix: string|null = null) {}
 
   /**
    * Resolves the `url` given the `baseUrl`:
@@ -202,7 +202,6 @@ function _buildFromEncodedParts(
  *    $6 = <undefined>       query without ?
  *    $7 = Related           fragment without #
  * </pre>
- * @type {!RegExp}
  * @internal
  */
 const _splitRe = new RegExp(
@@ -254,7 +253,7 @@ enum _ComponentIndex {
  *     arbitrary strings may still look like path names.
  */
 function _split(uri: string): Array<string|any> {
-  return uri.match(_splitRe);
+  return uri.match(_splitRe) !;
 }
 
 /**

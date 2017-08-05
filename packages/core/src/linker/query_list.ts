@@ -16,7 +16,8 @@ import {getSymbolIterator} from '../util';
  * An unmodifiable list of items that Angular keeps up to date when the state
  * of the application changes.
  *
- * The type of object that {@link Query} and {@link ViewQueryMetadata} provide.
+ * The type of object that {@link ViewChildren}, {@link ContentChildren}, and {@link QueryList}
+ * provide.
  *
  * Implements an iterable interface, therefore it can be used in both ES6
  * javascript `for (var i of items)` loops as well as in Angular templates with
@@ -63,7 +64,9 @@ export class QueryList<T>/* implements Iterable<T> */ {
    * See
    * [Array.find](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/find)
    */
-  find(fn: (item: T, index: number, array: T[]) => boolean): T { return this._results.find(fn); }
+  find(fn: (item: T, index: number, array: T[]) => boolean): T|undefined {
+    return this._results.find(fn);
+  }
 
   /**
    * See

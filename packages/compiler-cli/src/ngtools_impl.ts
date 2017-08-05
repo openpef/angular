@@ -33,7 +33,8 @@ export type LazyRouteMap = {
 // A route definition. Normally the short form 'path/to/module#ModuleClassName' is used by
 // the user, and this is a helper class to extract information from it.
 export class RouteDef {
-  private constructor(public readonly path: string, public readonly className: string = null) {}
+  private constructor(public readonly path: string, public readonly className: string|null = null) {
+  }
 
   toString() {
     return (this.className === null || this.className == 'default') ?
@@ -48,17 +49,12 @@ export class RouteDef {
 }
 
 
-/**
- *
- * @returns {LazyRouteMap}
- * @private
- */
 export function listLazyRoutesOfModule(
     entryModule: string, host: AotCompilerHost, reflector: StaticReflector): LazyRouteMap {
   const entryRouteDef = RouteDef.fromString(entryModule);
   const containingFile = _resolveModule(entryRouteDef.path, entryRouteDef.path, host);
   const modulePath = `./${containingFile.replace(/^(.*)\//, '')}`;
-  const className = entryRouteDef.className;
+  const className = entryRouteDef.className !;
 
   // List loadChildren of this single module.
   const appStaticSymbol = reflector.findDeclaration(modulePath, className, containingFile);
@@ -110,7 +106,6 @@ function _resolveModule(modulePath: string, containingFile: string, host: AotCom
 
 /**
  * Throw an exception if a route is in a route map, but does not point to the same module.
- * @private
  */
 function _assertRoute(map: LazyRouteMap, route: LazyRoute) {
   const r = route.routeDef.toString();
@@ -123,6 +118,12 @@ function _assertRoute(map: LazyRouteMap, route: LazyRoute) {
   }
 }
 
+export function flatten<T>(list: Array<T|T[]>): T[] {
+  return list.reduce((flat: any[], item: T | T[]): T[] => {
+    const flatItem = Array.isArray(item) ? flatten(item) : item;
+    return (<T[]>flat).concat(flatItem);
+  }, []);
+}
 
 /**
  * Extract all the LazyRoutes from a module. This extracts all `loadChildren` keys from this
@@ -133,12 +134,10 @@ function _extractLazyRoutesFromStaticModule(
     staticSymbol: StaticSymbol, reflector: StaticReflector, host: AotCompilerHost,
     ROUTES: StaticSymbol): LazyRoute[] {
   const moduleMetadata = _getNgModuleMetadata(staticSymbol, reflector);
-  const allRoutes: any =
-      (moduleMetadata.imports || [])
-          .filter(i => 'providers' in i)
-          .reduce((mem: Route[], m: any) => {
-            return mem.concat(_collectRoutes(m.providers || [], reflector, ROUTES));
-          }, _collectRoutes(moduleMetadata.providers || [], reflector, ROUTES));
+  const imports = flatten(moduleMetadata.imports || []);
+  const allRoutes: any = imports.filter(i => 'providers' in i).reduce((mem: Route[], m: any) => {
+    return mem.concat(_collectRoutes(m.providers || [], reflector, ROUTES));
+  }, _collectRoutes(moduleMetadata.providers || [], reflector, ROUTES));
 
   const lazyRoutes: LazyRoute[] =
       _collectLoadChildren(allRoutes).reduce((acc: LazyRoute[], route: string) => {
@@ -148,8 +147,13 @@ function _extractLazyRoutesFromStaticModule(
         return acc;
       }, []);
 
-  const importedSymbols = ((moduleMetadata.imports || []) as any[])
-                              .filter(i => i instanceof StaticSymbol) as StaticSymbol[];
+  const importedSymbols =
+      (imports as any[])
+          .filter(i => i instanceof StaticSymbol || i.ngModule instanceof StaticSymbol)
+          .map(i => {
+            if (i instanceof StaticSymbol) return i;
+            return i.ngModule;
+          }) as StaticSymbol[];
 
   return importedSymbols
       .reduce(
@@ -163,7 +167,6 @@ function _extractLazyRoutesFromStaticModule(
 
 /**
  * Get the NgModule Metadata of a symbol.
- * @private
  */
 function _getNgModuleMetadata(staticSymbol: StaticSymbol, reflector: StaticReflector): NgModule {
   const ngModules = reflector.annotations(staticSymbol).filter((s: any) => s instanceof NgModule);
@@ -194,7 +197,6 @@ function _collectRoutes(
 
 /**
  * Return the loadChildren values of a list of Route.
- * @private
  */
 function _collectLoadChildren(routes: Route[]): string[] {
   return routes.reduce((m, r) => {

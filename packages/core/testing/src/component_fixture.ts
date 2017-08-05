@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {ChangeDetectorRef, ComponentRef, DebugElement, ElementRef, NgZone, getDebugNode} from '@angular/core';
+import {ChangeDetectorRef, ComponentRef, DebugElement, ElementRef, NgZone, RendererFactory2, getDebugNode} from '@angular/core';
 
 
 /**
@@ -40,17 +40,19 @@ export class ComponentFixture<T> {
    */
   changeDetectorRef: ChangeDetectorRef;
 
+  private _renderer: RendererFactory2|null|undefined;
   private _isStable: boolean = true;
   private _isDestroyed: boolean = false;
-  private _resolve: (result: any) => void;
-  private _promise: Promise<any> = null;
+  private _resolve: ((result: any) => void)|null = null;
+  private _promise: Promise<any>|null = null;
   private _onUnstableSubscription: any /** TODO #9100 */ = null;
   private _onStableSubscription: any /** TODO #9100 */ = null;
   private _onMicrotaskEmptySubscription: any /** TODO #9100 */ = null;
   private _onErrorSubscription: any /** TODO #9100 */ = null;
 
   constructor(
-      public componentRef: ComponentRef<T>, public ngZone: NgZone, private _autoDetect: boolean) {
+      public componentRef: ComponentRef<T>, public ngZone: NgZone|null,
+      private _autoDetect: boolean) {
     this.changeDetectorRef = componentRef.changeDetectorRef;
     this.elementRef = componentRef.location;
     this.debugElement = <DebugElement>getDebugNode(this.elementRef.nativeElement);
@@ -59,7 +61,7 @@ export class ComponentFixture<T> {
     this.componentRef = componentRef;
     this.ngZone = ngZone;
 
-    if (ngZone != null) {
+    if (ngZone) {
       this._onUnstableSubscription =
           ngZone.onUnstable.subscribe({next: () => { this._isStable = false; }});
       this._onMicrotaskEmptySubscription = ngZone.onMicrotaskEmpty.subscribe({
@@ -80,9 +82,9 @@ export class ComponentFixture<T> {
             // Do this check in the next tick so that ngZone gets a chance to update the state of
             // pending macrotasks.
             scheduleMicroTask(() => {
-              if (!this.ngZone.hasPendingMacrotasks) {
+              if (!ngZone.hasPendingMacrotasks) {
                 if (this._promise !== null) {
-                  this._resolve(true);
+                  this._resolve !(true);
                   this._resolve = null;
                   this._promise = null;
                 }
@@ -140,7 +142,7 @@ export class ComponentFixture<T> {
    * Return whether the fixture is currently stable or has async tasks that have not been completed
    * yet.
    */
-  isStable(): boolean { return this._isStable && !this.ngZone.hasPendingMacrotasks; }
+  isStable(): boolean { return this._isStable && !this.ngZone !.hasPendingMacrotasks; }
 
   /**
    * Get a promise that resolves when the fixture is stable.
@@ -157,6 +159,25 @@ export class ComponentFixture<T> {
       this._promise = new Promise(res => { this._resolve = res; });
       return this._promise;
     }
+  }
+
+
+  private _getRenderer() {
+    if (this._renderer === undefined) {
+      this._renderer = this.componentRef.injector.get(RendererFactory2, null);
+    }
+    return this._renderer as RendererFactory2 | null;
+  }
+
+  /**
+    * Get a promise that resolves when the ui state is stable following animations.
+    */
+  whenRenderingDone(): Promise<any> {
+    const renderer = this._getRenderer();
+    if (renderer && renderer.whenRenderingDone) {
+      return renderer.whenRenderingDone();
+    }
+    return this.whenStable();
   }
 
   /**

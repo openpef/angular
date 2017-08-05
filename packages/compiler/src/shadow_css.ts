@@ -240,7 +240,7 @@ export class ShadowCss {
   private _extractUnscopedRulesFromCssText(cssText: string): string {
     // Difference with webcomponents.js: does not handle comments
     let r = '';
-    let m: RegExpExecArray;
+    let m: RegExpExecArray|null;
     _cssContentUnscopedRuleRe.lastIndex = 0;
     while ((m = _cssContentUnscopedRuleRe.exec(cssText)) !== null) {
       const rule = m[0].replace(m[2], '').replace(m[1], m[4]);
@@ -433,7 +433,7 @@ export class ShadowCss {
 
     let scopedSelector = '';
     let startIndex = 0;
-    let res: RegExpExecArray;
+    let res: RegExpExecArray|null;
     const sep = /( |>|\+|~(?!=))\s*/g;
     const scopeAfter = selector.indexOf(_polyfillHostNoCombinator);
 
@@ -513,7 +513,11 @@ const _shadowDOMSelectorsRe = [
   /\/shadow-deep\//g,
   /\/shadow\//g,
 ];
-const _shadowDeepSelectors = /(?:>>>)|(?:\/deep\/)/g;
+
+// The deep combinator is deprecated in the CSS spec
+// Support for `>>>`, `deep`, `::ng-deep` is then also deprecated and will be removed in the future.
+// see https://github.com/angular/angular/pull/17677
+const _shadowDeepSelectors = /(?:>>>)|(?:\/deep\/)|(?:::ng-deep)/g;
 const _selectorReSuffix = '([>\\s~+\[.,{:][\\s\\S]*)?$';
 const _polyfillHostRe = /-shadowcsshost/gim;
 const _colonHostRe = /:host/gim;

@@ -13,16 +13,15 @@ export enum NumberFormatStyle {
 }
 
 export class NumberFormatter {
-  static format(
-      num: number, locale: string, style: NumberFormatStyle,
-      {minimumIntegerDigits, minimumFractionDigits, maximumFractionDigits, currency,
-       currencyAsSymbol = false}: {
-        minimumIntegerDigits?: number,
-        minimumFractionDigits?: number,
-        maximumFractionDigits?: number,
-        currency?: string,
-        currencyAsSymbol?: boolean
-      } = {}): string {
+  static format(num: number, locale: string, style: NumberFormatStyle, opts: {
+    minimumIntegerDigits?: number,
+    minimumFractionDigits?: number,
+    maximumFractionDigits?: number,
+    currency?: string|null,
+    currencyAsSymbol?: boolean
+  } = {}): string {
+    const {minimumIntegerDigits, minimumFractionDigits, maximumFractionDigits, currency,
+           currencyAsSymbol = false} = opts;
     const options: Intl.NumberFormatOptions = {
       minimumIntegerDigits,
       minimumFractionDigits,
@@ -31,7 +30,7 @@ export class NumberFormatter {
     };
 
     if (style == NumberFormatStyle.Currency) {
-      options.currency = currency;
+      options.currency = typeof currency == 'string' ? currency : undefined;
       options.currencyDisplay = currencyAsSymbol ? 'symbol' : 'code';
     }
     return new Intl.NumberFormat(locale, options).format(num);
@@ -173,7 +172,7 @@ function nameCondition(prop: string, len: number): Intl.DateTimeFormatOptions {
 }
 
 function combine(options: Intl.DateTimeFormatOptions[]): Intl.DateTimeFormatOptions {
-  return (<any>Object).assign({}, ...options);
+  return options.reduce((merged, opt) => ({...merged, ...opt}), {});
 }
 
 function datePartGetterFactory(ret: Intl.DateTimeFormatOptions): DateFormatterFn {
@@ -192,17 +191,18 @@ function dateFormatter(format: string, date: Date, locale: string): string {
 
   if (!parts) {
     parts = [];
-    let match: RegExpExecArray;
+    let match: RegExpExecArray|null;
     DATE_FORMATS_SPLIT.exec(format);
 
-    while (format) {
-      match = DATE_FORMATS_SPLIT.exec(format);
+    let _format: string|null = format;
+    while (_format) {
+      match = DATE_FORMATS_SPLIT.exec(_format);
       if (match) {
         parts = parts.concat(match.slice(1));
-        format = parts.pop();
+        _format = parts.pop() !;
       } else {
-        parts.push(format);
-        format = null;
+        parts.push(_format);
+        _format = null;
       }
     }
 

@@ -10,7 +10,7 @@ import {ResourceLoader} from '@angular/compiler';
 import {SourceMap} from '@angular/compiler/src/output/source_map';
 import {extractSourceMap, originalPositionFor} from '@angular/compiler/test/output/source_map_util';
 import {MockResourceLoader} from '@angular/compiler/testing/src/resource_loader_mock';
-import {Attribute, Component, Directive, ɵglobal} from '@angular/core';
+import {Attribute, Component, Directive, ErrorHandler, ɵglobal} from '@angular/core';
 import {getErrorLogger} from '@angular/core/src/errors';
 import {ComponentFixture, TestBed, fakeAsync, tick} from '@angular/core/testing';
 
@@ -26,15 +26,15 @@ export function main() {
     });
 
     function getErrorLoggerStack(e: Error): string {
-      let logStack: string;
-      getErrorLogger(e)(<any>{error: () => logStack = new Error().stack}, e.message);
+      let logStack: string = undefined !;
+      getErrorLogger(e)(<any>{error: () => logStack = new Error().stack !}, e.message);
       return logStack;
     }
 
     function getSourceMap(genFile: string): SourceMap {
       const jitSources = jitSpy.calls.all().map((call) => call.args[call.args.length - 1]);
       return jitSources.map(source => extractSourceMap(source))
-          .find(map => map && map.file === genFile);
+          .find(map => !!(map && map.file === genFile)) !;
     }
 
     function getSourcePositionForStack(stack: string):
@@ -46,9 +46,9 @@ export function main() {
               .map(line => /\((.*\.ngfactory\.js):(\d+):(\d+)/.exec(line))
               .filter(match => !!match)
               .map(match => ({
-                     file: match[1],
-                     line: parseInt(match[2], 10),
-                     column: parseInt(match[3], 10)
+                     file: match ![1],
+                     line: parseInt(match ![2], 10),
+                     column: parseInt(match ![3], 10)
                    }));
       const ngFactoryLocation = ngFactoryLocations[0];
 
@@ -231,11 +231,10 @@ export function main() {
            const comp = compileAndCreateComponent(MyComp);
 
            let error: any;
-           try {
-             comp.debugElement.children[0].children[0].triggerEventHandler('click', 'EVENT');
-           } catch (e) {
-             error = e;
-           }
+           const errorHandler = TestBed.get(ErrorHandler);
+           spyOn(errorHandler, 'handleError').and.callFake((e: any) => error = e);
+           comp.debugElement.children[0].children[0].triggerEventHandler('click', 'EVENT');
+           expect(error).toBeTruthy();
            // the stack should point to the binding
            expect(getSourcePositionForStack(error.stack)).toEqual({
              line: 2,

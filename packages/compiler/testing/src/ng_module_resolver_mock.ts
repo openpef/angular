@@ -6,14 +6,14 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {NgModuleResolver} from '@angular/compiler';
+import {CompileReflector, NgModuleResolver} from '@angular/compiler';
 import {Compiler, Injectable, Injector, NgModule, Type} from '@angular/core';
 
 @Injectable()
 export class MockNgModuleResolver extends NgModuleResolver {
   private _ngModules = new Map<Type<any>, NgModule>();
 
-  constructor(private _injector: Injector) { super(); }
+  constructor(private _injector: Injector, reflector: CompileReflector) { super(reflector); }
 
   /**
    * Overrides the {@link NgModule} for a module.
@@ -30,7 +30,7 @@ export class MockNgModuleResolver extends NgModuleResolver {
    * `NgModuleResolver`, see `setNgModule`.
    */
   resolve(type: Type<any>, throwIfNotFound = true): NgModule {
-    return this._ngModules.get(type) || super.resolve(type, throwIfNotFound);
+    return this._ngModules.get(type) || super.resolve(type, throwIfNotFound) !;
   }
 
   private get _compiler(): Compiler { return this._injector.get(Compiler); }

@@ -40,11 +40,15 @@ export function main() {
       const css = `
       @import '1.css';
       /*@import '2.css';*/
+      /*
+      @import '3.css';
+      */
       `;
       const styleWithImports = extractStyleUrls(urlResolver, 'http://ng.io', css);
       expect(styleWithImports.style.trim()).toEqual('');
       expect(styleWithImports.styleUrls).toContain('http://ng.io/1.css');
       expect(styleWithImports.styleUrls).not.toContain('http://ng.io/2.css');
+      expect(styleWithImports.styleUrls).not.toContain('http://ng.io/3.css');
     });
 
     it('should extract "@import url()" urls', () => {
@@ -103,7 +107,7 @@ export function main() {
        () => { expect(isStyleUrlResolvable('package:someUrl.css')).toBe(true); });
 
     it('should not resolve empty urls', () => {
-      expect(isStyleUrlResolvable(null)).toBe(false);
+      expect(isStyleUrlResolvable(null !)).toBe(false);
       expect(isStyleUrlResolvable('')).toBe(false);
     });
 

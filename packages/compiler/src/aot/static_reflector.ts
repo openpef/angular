@@ -6,18 +6,29 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {Attribute, Component, ContentChild, ContentChildren, Directive, Host, HostBinding, HostListener, Inject, Injectable, Input, NgModule, Optional, Output, Pipe, Self, SkipSelf, ViewChild, ViewChildren, animate, group, keyframes, sequence, state, style, transition, trigger, ɵReflectorReader} from '@angular/core';
+import {Attribute, Component, ContentChild, ContentChildren, Directive, Host, HostBinding, HostListener, Inject, Injectable, Input, NgModule, Optional, Output, Pipe, Self, SkipSelf, ViewChild, ViewChildren, animate, group, keyframes, sequence, state, style, transition, trigger} from '@angular/core';
+
+import {CompileSummaryKind} from '../compile_metadata';
+import {CompileReflector} from '../compile_reflector';
+import * as o from '../output/output_ast';
+import {SummaryResolver} from '../summary_resolver';
 import {syntaxError} from '../util';
+
 import {StaticSymbol} from './static_symbol';
 import {StaticSymbolResolver} from './static_symbol_resolver';
 
 const ANGULAR_CORE = '@angular/core';
+const ANGULAR_ROUTER = '@angular/router';
 
 const HIDDEN_KEY = /^\$.*\$$/;
 
 const IGNORE = {
   __symbolic: 'ignore'
 };
+
+const USE_VALUE = 'useValue';
+const PROVIDE = 'provide';
+const REFERENCE_SET = new Set([USE_VALUE, 'useFactory', 'data']);
 
 function shouldIgnore(value: any): boolean {
   return value && value.__symbolic == 'ignore';
@@ -27,7 +38,7 @@ function shouldIgnore(value: any): boolean {
  * A static reflector implements enough of the Reflector API that is necessary to compile
  * templates statically.
  */
-export class StaticReflector implements ɵReflectorReader {
+export class StaticReflector implements CompileReflector {
   private annotationCache = new Map<StaticSymbol, any[]>();
   private propertyCache = new Map<StaticSymbol, {[key: string]: any[]}>();
   private parameterCache = new Map<StaticSymbol, any[]>();
@@ -35,38 +46,46 @@ export class StaticReflector implements ɵReflectorReader {
   private conversionMap = new Map<StaticSymbol, (context: StaticSymbol, args: any[]) => any>();
   private injectionToken: StaticSymbol;
   private opaqueToken: StaticSymbol;
+  private ROUTES: StaticSymbol;
+  private ANALYZE_FOR_ENTRY_COMPONENTS: StaticSymbol;
+  private annotationForParentClassWithSummaryKind = new Map<CompileSummaryKind, any[]>();
+  private annotationNames = new Map<any, string>();
 
   constructor(
+      private summaryResolver: SummaryResolver<StaticSymbol>,
       private symbolResolver: StaticSymbolResolver,
       knownMetadataClasses: {name: string, filePath: string, ctor: any}[] = [],
       knownMetadataFunctions: {name: string, filePath: string, fn: any}[] = [],
-      private errorRecorder?: (error: any, fileName: string) => void) {
+      private errorRecorder?: (error: any, fileName?: string) => void) {
     this.initializeConversionMap();
     knownMetadataClasses.forEach(
         (kc) => this._registerDecoratorOrConstructor(
             this.getStaticSymbol(kc.filePath, kc.name), kc.ctor));
     knownMetadataFunctions.forEach(
         (kf) => this._registerFunction(this.getStaticSymbol(kf.filePath, kf.name), kf.fn));
+    this.annotationForParentClassWithSummaryKind.set(
+        CompileSummaryKind.Directive, [Directive, Component]);
+    this.annotationForParentClassWithSummaryKind.set(CompileSummaryKind.Pipe, [Pipe]);
+    this.annotationForParentClassWithSummaryKind.set(CompileSummaryKind.NgModule, [NgModule]);
+    this.annotationForParentClassWithSummaryKind.set(
+        CompileSummaryKind.Injectable, [Injectable, Pipe, Directive, Component, NgModule]);
+    this.annotationNames.set(Directive, 'Directive');
+    this.annotationNames.set(Component, 'Component');
+    this.annotationNames.set(Pipe, 'Pipe');
+    this.annotationNames.set(NgModule, 'NgModule');
+    this.annotationNames.set(Injectable, 'Injectable');
   }
 
-  importUri(typeOrFunc: StaticSymbol): string {
-    const staticSymbol = this.findSymbolDeclaration(typeOrFunc);
-    return staticSymbol ? staticSymbol.filePath : null;
-  }
-
-  resourceUri(typeOrFunc: StaticSymbol): string {
+  componentModuleUrl(typeOrFunc: StaticSymbol): string {
     const staticSymbol = this.findSymbolDeclaration(typeOrFunc);
     return this.symbolResolver.getResourcePath(staticSymbol);
   }
 
-  resolveIdentifier(name: string, moduleUrl: string, members: string[]): StaticSymbol {
-    const importSymbol = this.getStaticSymbol(moduleUrl, name);
-    const rootSymbol = this.findDeclaration(moduleUrl, name);
+  resolveExternalReference(ref: o.ExternalReference): StaticSymbol {
+    const importSymbol = this.getStaticSymbol(ref.moduleName !, ref.name !);
+    const rootSymbol = this.findDeclaration(ref.moduleName !, ref.name !);
     if (importSymbol != rootSymbol) {
       this.symbolResolver.recordImportAs(rootSymbol, importSymbol);
-    }
-    if (members && members.length) {
-      return this.getStaticSymbol(rootSymbol.filePath, rootSymbol.name, members);
     }
     return rootSymbol;
   }
@@ -74,6 +93,10 @@ export class StaticReflector implements ɵReflectorReader {
   findDeclaration(moduleUrl: string, name: string, containingFile?: string): StaticSymbol {
     return this.findSymbolDeclaration(
         this.symbolResolver.getSymbolByModule(moduleUrl, name, containingFile));
+  }
+
+  tryFindDeclaration(moduleUrl: string, name: string): StaticSymbol {
+    return this.symbolResolver.ignoreErrorsFor(() => this.findDeclaration(moduleUrl, name));
   }
 
   findSymbolDeclaration(symbol: StaticSymbol): StaticSymbol {
@@ -85,27 +108,37 @@ export class StaticReflector implements ɵReflectorReader {
     }
   }
 
-  resolveEnum(enumIdentifier: any, name: string): any {
-    const staticSymbol: StaticSymbol = enumIdentifier;
-    const members = (staticSymbol.members || []).concat(name);
-    return this.getStaticSymbol(staticSymbol.filePath, staticSymbol.name, members);
-  }
-
   public annotations(type: StaticSymbol): any[] {
     let annotations = this.annotationCache.get(type);
     if (!annotations) {
       annotations = [];
       const classMetadata = this.getTypeMetadata(type);
-      if (classMetadata['extends']) {
-        const parentType = this.trySimplify(type, classMetadata['extends']);
-        if (parentType && (parentType instanceof StaticSymbol)) {
-          const parentAnnotations = this.annotations(parentType);
-          annotations.push(...parentAnnotations);
-        }
+      const parentType = this.findParentType(type, classMetadata);
+      if (parentType) {
+        const parentAnnotations = this.annotations(parentType);
+        annotations.push(...parentAnnotations);
       }
+      let ownAnnotations: any[] = [];
       if (classMetadata['decorators']) {
-        const ownAnnotations: any[] = this.simplify(type, classMetadata['decorators']);
+        ownAnnotations = this.simplify(type, classMetadata['decorators']);
         annotations.push(...ownAnnotations);
+      }
+      if (parentType && !this.summaryResolver.isLibraryFile(type.filePath) &&
+          this.summaryResolver.isLibraryFile(parentType.filePath)) {
+        const summary = this.summaryResolver.resolveSummary(parentType);
+        if (summary && summary.type) {
+          const requiredAnnotationTypes =
+              this.annotationForParentClassWithSummaryKind.get(summary.type.summaryKind !) !;
+          const typeHasRequiredAnnotation = requiredAnnotationTypes.some(
+              (requiredType: any) => ownAnnotations.some(ann => ann instanceof requiredType));
+          if (!typeHasRequiredAnnotation) {
+            this.reportError(
+                syntaxError(
+                    `Class ${type.name} in ${type.filePath} extends from a ${CompileSummaryKind[summary.type.summaryKind!]} in another compilation unit without duplicating the decorator. ` +
+                    `Please add a ${requiredAnnotationTypes.map((type: any) => this.annotationNames.get(type)).join(' or ')} decorator to the class.`),
+                type);
+          }
+        }
       }
       this.annotationCache.set(type, annotations.filter(ann => !!ann));
     }
@@ -117,14 +150,12 @@ export class StaticReflector implements ɵReflectorReader {
     if (!propMetadata) {
       const classMetadata = this.getTypeMetadata(type);
       propMetadata = {};
-      if (classMetadata['extends']) {
-        const parentType = this.simplify(type, classMetadata['extends']);
-        if (parentType instanceof StaticSymbol) {
-          const parentPropMetadata = this.propMetadata(parentType);
-          Object.keys(parentPropMetadata).forEach((parentProp) => {
-            propMetadata[parentProp] = parentPropMetadata[parentProp];
-          });
-        }
+      const parentType = this.findParentType(type, classMetadata);
+      if (parentType) {
+        const parentPropMetadata = this.propMetadata(parentType);
+        Object.keys(parentPropMetadata).forEach((parentProp) => {
+          propMetadata ![parentProp] = parentPropMetadata[parentProp];
+        });
       }
 
       const members = classMetadata['members'] || {};
@@ -133,10 +164,10 @@ export class StaticReflector implements ɵReflectorReader {
         const prop = (<any[]>propData)
                          .find(a => a['__symbolic'] == 'property' || a['__symbolic'] == 'method');
         const decorators: any[] = [];
-        if (propMetadata[propName]) {
-          decorators.push(...propMetadata[propName]);
+        if (propMetadata ![propName]) {
+          decorators.push(...propMetadata ![propName]);
         }
-        propMetadata[propName] = decorators;
+        propMetadata ![propName] = decorators;
         if (prop && prop['decorators']) {
           decorators.push(...this.simplify(type, prop['decorators']));
         }
@@ -157,29 +188,26 @@ export class StaticReflector implements ɵReflectorReader {
       let parameters = this.parameterCache.get(type);
       if (!parameters) {
         const classMetadata = this.getTypeMetadata(type);
+        const parentType = this.findParentType(type, classMetadata);
         const members = classMetadata ? classMetadata['members'] : null;
         const ctorData = members ? members['__ctor__'] : null;
         if (ctorData) {
           const ctor = (<any[]>ctorData).find(a => a['__symbolic'] == 'constructor');
-          const parameterTypes = <any[]>this.simplify(type, ctor['parameters'] || []);
+          const rawParameterTypes = <any[]>ctor['parameters'] || [];
           const parameterDecorators = <any[]>this.simplify(type, ctor['parameterDecorators'] || []);
           parameters = [];
-          parameterTypes.forEach((paramType, index) => {
+          rawParameterTypes.forEach((rawParamType, index) => {
             const nestedResult: any[] = [];
-            if (paramType) {
-              nestedResult.push(paramType);
-            }
+            const paramType = this.trySimplify(type, rawParamType);
+            if (paramType) nestedResult.push(paramType);
             const decorators = parameterDecorators ? parameterDecorators[index] : null;
             if (decorators) {
               nestedResult.push(...decorators);
             }
-            parameters.push(nestedResult);
+            parameters !.push(nestedResult);
           });
-        } else if (classMetadata['extends']) {
-          const parentType = this.simplify(type, classMetadata['extends']);
-          if (parentType instanceof StaticSymbol) {
-            parameters = this.parameters(parentType);
-          }
+        } else if (parentType) {
+          parameters = this.parameters(parentType);
         }
         if (!parameters) {
           parameters = [];
@@ -198,25 +226,30 @@ export class StaticReflector implements ɵReflectorReader {
     if (!methodNames) {
       const classMetadata = this.getTypeMetadata(type);
       methodNames = {};
-      if (classMetadata['extends']) {
-        const parentType = this.simplify(type, classMetadata['extends']);
-        if (parentType instanceof StaticSymbol) {
-          const parentMethodNames = this._methodNames(parentType);
-          Object.keys(parentMethodNames).forEach((parentProp) => {
-            methodNames[parentProp] = parentMethodNames[parentProp];
-          });
-        }
+      const parentType = this.findParentType(type, classMetadata);
+      if (parentType) {
+        const parentMethodNames = this._methodNames(parentType);
+        Object.keys(parentMethodNames).forEach((parentProp) => {
+          methodNames ![parentProp] = parentMethodNames[parentProp];
+        });
       }
 
       const members = classMetadata['members'] || {};
       Object.keys(members).forEach((propName) => {
         const propData = members[propName];
         const isMethod = (<any[]>propData).some(a => a['__symbolic'] == 'method');
-        methodNames[propName] = methodNames[propName] || isMethod;
+        methodNames ![propName] = methodNames ![propName] || isMethod;
       });
       this.methodCache.set(type, methodNames);
     }
     return methodNames;
+  }
+
+  private findParentType(type: StaticSymbol, classMetadata: any): StaticSymbol|undefined {
+    const parentType = this.trySimplify(type, classMetadata['extends']);
+    if (parentType instanceof StaticSymbol) {
+      return parentType;
+    }
   }
 
   hasLifecycleHook(type: any, lcProperty: string): boolean {
@@ -245,6 +278,9 @@ export class StaticReflector implements ɵReflectorReader {
   private initializeConversionMap(): void {
     this.injectionToken = this.findDeclaration(ANGULAR_CORE, 'InjectionToken');
     this.opaqueToken = this.findDeclaration(ANGULAR_CORE, 'OpaqueToken');
+    this.ROUTES = this.tryFindDeclaration(ANGULAR_ROUTER, 'ROUTES');
+    this.ANALYZE_FOR_ENTRY_COMPONENTS =
+        this.findDeclaration(ANGULAR_CORE, 'ANALYZE_FOR_ENTRY_COMPONENTS');
 
     this._registerDecoratorOrConstructor(this.findDeclaration(ANGULAR_CORE, 'Host'), Host);
     this._registerDecoratorOrConstructor(
@@ -328,7 +364,8 @@ export class StaticReflector implements ɵReflectorReader {
     let scope = BindingScope.empty;
     const calling = new Map<StaticSymbol, boolean>();
 
-    function simplifyInContext(context: StaticSymbol, value: any, depth: number): any {
+    function simplifyInContext(
+        context: StaticSymbol, value: any, depth: number, references: number): any {
       function resolveReferenceValue(staticSymbol: StaticSymbol): any {
         const resolvedSymbol = self.symbolResolver.resolveSymbol(staticSymbol);
         return resolvedSymbol ? resolvedSymbol.metadata : null;
@@ -339,17 +376,17 @@ export class StaticReflector implements ɵReflectorReader {
           if (calling.get(functionSymbol)) {
             throw new Error('Recursion not supported');
           }
-          calling.set(functionSymbol, true);
           try {
             const value = targetFunction['value'];
             if (value && (depth != 0 || value.__symbolic != 'error')) {
               const parameters: string[] = targetFunction['parameters'];
               const defaults: any[] = targetFunction.defaults;
-              args = args.map(arg => simplifyInContext(context, arg, depth + 1))
+              args = args.map(arg => simplifyInContext(context, arg, depth + 1, references))
                          .map(arg => shouldIgnore(arg) ? undefined : arg);
               if (defaults && defaults.length > args.length) {
                 args.push(...defaults.slice(args.length).map((value: any) => simplify(value)));
               }
+              calling.set(functionSymbol, true);
               const functionScope = BindingScope.build();
               for (let i = 0; i < parameters.length; i++) {
                 functionScope.define(parameters[i], args[i]);
@@ -358,7 +395,7 @@ export class StaticReflector implements ɵReflectorReader {
               let result: any;
               try {
                 scope = functionScope.done();
-                result = simplifyInContext(functionSymbol, value, depth + 1);
+                result = simplifyInContext(functionSymbol, value, depth + 1, references);
               } finally {
                 scope = oldScope;
               }
@@ -405,15 +442,15 @@ export class StaticReflector implements ɵReflectorReader {
           return result;
         }
         if (expression instanceof StaticSymbol) {
-          // Stop simplification at builtin symbols
+          // Stop simplification at builtin symbols or if we are in a reference context
           if (expression === self.injectionToken || expression === self.opaqueToken ||
-              self.conversionMap.has(expression)) {
+              self.conversionMap.has(expression) || references > 0) {
             return expression;
           } else {
             const staticSymbol = expression;
             const declarationValue = resolveReferenceValue(staticSymbol);
             if (declarationValue) {
-              return simplifyInContext(staticSymbol, declarationValue, depth + 1);
+              return simplifyInContext(staticSymbol, declarationValue, depth + 1, references);
             } else {
               return staticSymbol;
             }
@@ -504,13 +541,15 @@ export class StaticReflector implements ɵReflectorReader {
                       self.getStaticSymbol(selectTarget.filePath, selectTarget.name, members);
                   const declarationValue = resolveReferenceValue(selectContext);
                   if (declarationValue) {
-                    return simplifyInContext(selectContext, declarationValue, depth + 1);
+                    return simplifyInContext(
+                        selectContext, declarationValue, depth + 1, references);
                   } else {
                     return selectContext;
                   }
                 }
                 if (selectTarget && isPrimitive(member))
-                  return simplifyInContext(selectContext, selectTarget[member], depth + 1);
+                  return simplifyInContext(
+                      selectContext, selectTarget[member], depth + 1, references);
                 return null;
               case 'reference':
                 // Note: This only has to deal with variable references,
@@ -529,7 +568,8 @@ export class StaticReflector implements ɵReflectorReader {
               case 'new':
               case 'call':
                 // Determine if the function is a built-in conversion
-                staticSymbol = simplifyInContext(context, expression['expression'], depth + 1);
+                staticSymbol = simplifyInContext(
+                    context, expression['expression'], depth + 1, /* references */ 0);
                 if (staticSymbol instanceof StaticSymbol) {
                   if (staticSymbol === self.injectionToken || staticSymbol === self.opaqueToken) {
                     // if somebody calls new InjectionToken, don't create an InjectionToken,
@@ -540,7 +580,8 @@ export class StaticReflector implements ɵReflectorReader {
                   let converter = self.conversionMap.get(staticSymbol);
                   if (converter) {
                     const args =
-                        argExpressions.map(arg => simplifyInContext(context, arg, depth + 1))
+                        argExpressions
+                            .map(arg => simplifyInContext(context, arg, depth + 1, references))
                             .map(arg => shouldIgnore(arg) ? undefined : arg);
                     return converter(context, args);
                   } else {
@@ -549,7 +590,7 @@ export class StaticReflector implements ɵReflectorReader {
                     return simplifyCall(staticSymbol, targetFunction, argExpressions);
                   }
                 }
-                break;
+                return IGNORE;
               case 'error':
                 let message = produceErrorMessage(expression);
                 if (expression['line']) {
@@ -568,7 +609,20 @@ export class StaticReflector implements ɵReflectorReader {
             }
             return null;
           }
-          return mapStringMap(expression, (value, name) => simplify(value));
+          return mapStringMap(expression, (value, name) => {
+            if (REFERENCE_SET.has(name)) {
+              if (name === USE_VALUE && PROVIDE in expression) {
+                // If this is a provider expression, check for special tokens that need the value
+                // during analysis.
+                const provide = simplify(expression.provide);
+                if (provide === self.ROUTES || provide == self.ANALYZE_FOR_ENTRY_COMPONENTS) {
+                  return simplify(value);
+                }
+              }
+              return simplifyInContext(context, value, depth, references + 1);
+            }
+            return simplify(value);
+          });
         }
         return IGNORE;
       }
@@ -586,16 +640,16 @@ export class StaticReflector implements ɵReflectorReader {
       }
     }
 
-    const recordedSimplifyInContext = (context: StaticSymbol, value: any, depth: number) => {
+    const recordedSimplifyInContext = (context: StaticSymbol, value: any) => {
       try {
-        return simplifyInContext(context, value, depth);
+        return simplifyInContext(context, value, 0, 0);
       } catch (e) {
         this.reportError(e, context);
       }
     };
 
-    const result = this.errorRecorder ? recordedSimplifyInContext(context, value, 0) :
-                                        simplifyInContext(context, value, 0);
+    const result = this.errorRecorder ? recordedSimplifyInContext(context, value) :
+                                        simplifyInContext(context, value, 0, 0);
     if (shouldIgnore(result)) {
       return undefined;
     }

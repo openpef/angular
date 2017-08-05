@@ -5,7 +5,7 @@
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
-import {DirectiveResolver} from '@angular/compiler';
+import {CompileReflector, DirectiveResolver} from '@angular/compiler';
 import {Compiler, Component, Directive, Injectable, Injector, Provider, Type, resolveForwardRef, ɵViewMetadata as ViewMetadata} from '@angular/core';
 
 
@@ -22,14 +22,17 @@ export class MockDirectiveResolver extends DirectiveResolver {
   private _views = new Map<Type<any>, ViewMetadata>();
   private _inlineTemplates = new Map<Type<any>, string>();
 
-  constructor(private _injector: Injector) { super(); }
+  constructor(private _injector: Injector, reflector: CompileReflector) { super(reflector); }
 
   private get _compiler(): Compiler { return this._injector.get(Compiler); }
 
   private _clearCacheFor(component: Type<any>) { this._compiler.clearCacheFor(component); }
 
-  resolve(type: Type<any>, throwIfNotFound = true): Directive {
-    let metadata = this._directives.get(type);
+  resolve(type: Type<any>): Directive;
+  resolve(type: Type<any>, throwIfNotFound: true): Directive;
+  resolve(type: Type<any>, throwIfNotFound: boolean): Directive|null;
+  resolve(type: Type<any>, throwIfNotFound = true): Directive|null {
+    let metadata = this._directives.get(type) || null;
     if (!metadata) {
       metadata = super.resolve(type, throwIfNotFound);
     }
@@ -53,17 +56,13 @@ export class MockDirectiveResolver extends DirectiveResolver {
         viewProviders = originalViewProviders.concat(viewProviderOverrides);
       }
 
-      let view = this._views.get(type);
-      if (!view) {
-        view = <any>metadata;
-      }
-
+      let view = this._views.get(type) || metadata;
       let animations = view.animations;
-      let templateUrl = view.templateUrl;
+      let templateUrl: string|undefined = view.templateUrl;
 
       let inlineTemplate = this._inlineTemplates.get(type);
-      if (inlineTemplate != null) {
-        templateUrl = null;
+      if (inlineTemplate) {
+        templateUrl = undefined;
       } else {
         inlineTemplate = view.template;
       }

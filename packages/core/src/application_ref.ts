@@ -23,7 +23,7 @@ import {Injectable, InjectionToken, Injector, Provider, ReflectiveInjector} from
 import {CompilerFactory, CompilerOptions} from './linker/compiler';
 import {ComponentFactory, ComponentRef} from './linker/component_factory';
 import {ComponentFactoryBoundToModule, ComponentFactoryResolver} from './linker/component_factory_resolver';
-import {NgModuleFactory, NgModuleInjector, NgModuleRef} from './linker/ng_module_factory';
+import {InternalNgModuleRef, NgModuleFactory, NgModuleRef} from './linker/ng_module_factory';
 import {InternalViewRef, ViewRef} from './linker/view_ref';
 import {WtfScopeFn, wtfCreateScope, wtfLeave} from './profile/profile';
 import {Testability, TestabilityRegistry} from './testability/testability';
@@ -89,7 +89,7 @@ export function createPlatform(injector: Injector): PlatformRef {
   }
   _platform = injector.get(PlatformRef);
   const inits = injector.get(PLATFORM_INITIALIZER, null);
-  if (inits) inits.forEach(init => init());
+  if (inits) inits.forEach((init: any) => init());
   return _platform;
 }
 
@@ -99,7 +99,7 @@ export function createPlatform(injector: Injector): PlatformRef {
  * @experimental APIs related to application bootstrap are currently under review.
  */
 export function createPlatformFactory(
-    parentPlatformFactory: (extraProviders?: Provider[]) => PlatformRef, name: string,
+    parentPlatformFactory: ((extraProviders?: Provider[]) => PlatformRef) | null, name: string,
     providers: Provider[] = []): (extraProviders?: Provider[]) => PlatformRef {
   const marker = new InjectionToken(`Platform: ${name}`);
   return (extraProviders: Provider[] = []) => {
@@ -153,7 +153,7 @@ export function destroyPlatform(): void {
  *
  * @experimental APIs related to application bootstrap are currently under review.
  */
-export function getPlatform(): PlatformRef {
+export function getPlatform(): PlatformRef|null {
   return _platform && !_platform.destroyed ? _platform : null;
 }
 
@@ -162,8 +162,8 @@ export function getPlatform(): PlatformRef {
  * has exactly one platform, and services (such as reflection) which are common
  * to every Angular application running on the page are bound in its scope.
  *
- * A page's platform is initialized implicitly when {@link bootstrap}() is called, or
- * explicitly by calling {@link createPlatform}().
+ * A page's platform is initialized implicitly when a platform is created via a platform factory
+ * (e.g. {@link platformBrowser}), or explicitly by calling the {@link createPlatform} function.
  *
  * @stable
  */
@@ -231,12 +231,13 @@ export abstract class PlatformRef {
   abstract get destroyed(): boolean;
 }
 
-function _callAndReportToErrorHandler(errorHandler: ErrorHandler, callback: () => any): any {
+function _callAndReportToErrorHandler(
+    errorHandler: ErrorHandler, ngZone: NgZone, callback: () => any): any {
   try {
     const result = callback();
     if (isPromise(result)) {
       return result.catch((e: any) => {
-        errorHandler.handleError(e);
+        ngZone.runOutsideAngular(() => errorHandler.handleError(e));
         // rethrow as the exception handler might not do it
         throw e;
       });
@@ -244,7 +245,7 @@ function _callAndReportToErrorHandler(errorHandler: ErrorHandler, callback: () =
 
     return result;
   } catch (e) {
-    errorHandler.handleError(e);
+    ngZone.runOutsideAngular(() => errorHandler.handleError(e));
     // rethrow as the exception handler might not do it
     throw e;
   }
@@ -278,10 +279,10 @@ export class PlatformRef_ extends PlatformRef {
   }
 
   bootstrapModuleFactory<M>(moduleFactory: NgModuleFactory<M>): Promise<NgModuleRef<M>> {
-    return this._bootstrapModuleFactoryWithZone(moduleFactory, null);
+    return this._bootstrapModuleFactoryWithZone(moduleFactory);
   }
 
-  private _bootstrapModuleFactoryWithZone<M>(moduleFactory: NgModuleFactory<M>, ngZone: NgZone):
+  private _bootstrapModuleFactoryWithZone<M>(moduleFactory: NgModuleFactory<M>, ngZone?: NgZone):
       Promise<NgModuleRef<M>> {
     // Note: We need to create the NgZone _before_ we instantiate the module,
     // as instantiating the module creates some providers eagerly.
@@ -293,15 +294,18 @@ export class PlatformRef_ extends PlatformRef {
     return ngZone.run(() => {
       const ngZoneInjector =
           ReflectiveInjector.resolveAndCreate([{provide: NgZone, useValue: ngZone}], this.injector);
-      const moduleRef = <NgModuleInjector<M>>moduleFactory.create(ngZoneInjector);
+      const moduleRef = <InternalNgModuleRef<M>>moduleFactory.create(ngZoneInjector);
       const exceptionHandler: ErrorHandler = moduleRef.injector.get(ErrorHandler, null);
       if (!exceptionHandler) {
         throw new Error('No ErrorHandler. Is platform module (BrowserModule) included?');
       }
       moduleRef.onDestroy(() => remove(this._modules, moduleRef));
-      ngZone.onError.subscribe({next: (error: any) => { exceptionHandler.handleError(error); }});
-      return _callAndReportToErrorHandler(exceptionHandler, () => {
+      ngZone !.runOutsideAngular(
+          () => ngZone !.onError.subscribe(
+              {next: (error: any) => { exceptionHandler.handleError(error); }}));
+      return _callAndReportToErrorHandler(exceptionHandler, ngZone !, () => {
         const initStatus: ApplicationInitStatus = moduleRef.injector.get(ApplicationInitStatus);
+        initStatus.runInitializers();
         return initStatus.donePromise.then(() => {
           this._moduleDoBootstrap(moduleRef);
           return moduleRef;
@@ -312,12 +316,12 @@ export class PlatformRef_ extends PlatformRef {
 
   bootstrapModule<M>(moduleType: Type<M>, compilerOptions: CompilerOptions|CompilerOptions[] = []):
       Promise<NgModuleRef<M>> {
-    return this._bootstrapModuleWithZone(moduleType, compilerOptions, null);
+    return this._bootstrapModuleWithZone(moduleType, compilerOptions);
   }
 
   private _bootstrapModuleWithZone<M>(
       moduleType: Type<M>, compilerOptions: CompilerOptions|CompilerOptions[] = [],
-      ngZone: NgZone = null): Promise<NgModuleRef<M>> {
+      ngZone?: NgZone): Promise<NgModuleRef<M>> {
     const compilerFactory: CompilerFactory = this.injector.get(CompilerFactory);
     const compiler = compilerFactory.createCompiler(
         Array.isArray(compilerOptions) ? compilerOptions : [compilerOptions]);
@@ -326,10 +330,10 @@ export class PlatformRef_ extends PlatformRef {
         .then((moduleFactory) => this._bootstrapModuleFactoryWithZone(moduleFactory, ngZone));
   }
 
-  private _moduleDoBootstrap(moduleRef: NgModuleInjector<any>): void {
-    const appRef = moduleRef.injector.get(ApplicationRef);
-    if (moduleRef.bootstrapFactories.length > 0) {
-      moduleRef.bootstrapFactories.forEach(f => appRef.bootstrap(f));
+  private _moduleDoBootstrap(moduleRef: InternalNgModuleRef<any>): void {
+    const appRef = moduleRef.injector.get(ApplicationRef) as ApplicationRef;
+    if (moduleRef._bootstrapComponents.length > 0) {
+      moduleRef._bootstrapComponents.forEach(f => appRef.bootstrap(f));
     } else if (moduleRef.instance.ngDoBootstrap) {
       moduleRef.instance.ngDoBootstrap(appRef);
     } else {
@@ -344,8 +348,6 @@ export class PlatformRef_ extends PlatformRef {
 /**
  * A reference to an Angular application running on a page.
  *
- * For more about Angular applications, see the documentation for {@link bootstrap}.
- *
  * @stable
  */
 export abstract class ApplicationRef {
@@ -358,10 +360,15 @@ export abstract class ApplicationRef {
    * specified application component onto DOM elements identified by the [componentType]'s
    * selector and kicks off automatic change detection to finish initializing the component.
    *
+   * Optionally, a component can be mounted onto a DOM element that does not match the
+   * [componentType]'s selector.
+   *
    * ### Example
    * {@example core/ts/platform/platform.ts region='longform'}
    */
-  abstract bootstrap<C>(componentFactory: ComponentFactory<C>|Type<C>): ComponentRef<C>;
+  abstract bootstrap<C>(
+      componentFactory: ComponentFactory<C>|Type<C>,
+      rootSelectorOrNode?: string|any): ComponentRef<C>;
 
   /**
    * Invoke this method to explicitly process change detection and its side-effects.
@@ -491,7 +498,8 @@ export class ApplicationRef_ extends ApplicationRef {
     view.detachFromAppRef();
   }
 
-  bootstrap<C>(componentOrFactory: ComponentFactory<C>|Type<C>): ComponentRef<C> {
+  bootstrap<C>(componentOrFactory: ComponentFactory<C>|Type<C>, rootSelectorOrNode?: string|any):
+      ComponentRef<C> {
     if (!this._initStatus.done) {
       throw new Error(
           'Cannot bootstrap as there are still asynchronous initializers running. Bootstrap components in the `ngDoBootstrap` method of the root module.');
@@ -500,7 +508,8 @@ export class ApplicationRef_ extends ApplicationRef {
     if (componentOrFactory instanceof ComponentFactory) {
       componentFactory = componentOrFactory;
     } else {
-      componentFactory = this._componentFactoryResolver.resolveComponentFactory(componentOrFactory);
+      componentFactory =
+          this._componentFactoryResolver.resolveComponentFactory(componentOrFactory) !;
     }
     this._rootComponentTypes.push(componentFactory.componentType);
 
@@ -508,7 +517,8 @@ export class ApplicationRef_ extends ApplicationRef {
     const ngModule = componentFactory instanceof ComponentFactoryBoundToModule ?
         null :
         this._injector.get(NgModuleRef);
-    const compRef = componentFactory.create(Injector.NULL, [], componentFactory.selector, ngModule);
+    const selectorOrNode = rootSelectorOrNode || componentFactory.selector;
+    const compRef = componentFactory.create(Injector.NULL, [], selectorOrNode, ngModule);
 
     compRef.onDestroy(() => { this._unloadComponent(compRef); });
     const testability = compRef.injector.get(Testability, null);
@@ -552,6 +562,9 @@ export class ApplicationRef_ extends ApplicationRef {
       if (this._enforceNoNewChanges) {
         this._views.forEach((view) => view.checkNoChanges());
       }
+    } catch (e) {
+      // Attention: Don't rethrow as it could cancel subscriptions to Observables!
+      this._zone.runOutsideAngular(() => this._exceptionHandler.handleError(e));
     } finally {
       this._runningTick = false;
       wtfLeave(scope);

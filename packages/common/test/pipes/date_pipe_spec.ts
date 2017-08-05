@@ -7,6 +7,7 @@
  */
 
 import {DatePipe} from '@angular/common';
+import {JitReflector} from '@angular/compiler';
 import {PipeResolver} from '@angular/compiler/src/pipe_resolver';
 import {browserDetection} from '@angular/platform-browser/testing/src/browser_util';
 
@@ -34,8 +35,9 @@ export function main() {
       pipe = new DatePipe('en-US');
     });
 
-    it('should be marked as pure',
-       () => { expect(new PipeResolver().resolve(DatePipe).pure).toEqual(true); });
+    it('should be marked as pure', () => {
+      expect(new PipeResolver(new JitReflector()).resolve(DatePipe) !.pure).toEqual(true);
+    });
 
     describe('supports', () => {
       it('should support date', () => { expect(() => pipe.transform(date)).not.toThrow(); });
@@ -122,9 +124,12 @@ export function main() {
           expectDateFormatAs(date, pattern, dateFixtures[pattern]);
         });
 
-        Object.keys(isoStringWithoutTimeFixtures).forEach((pattern: string) => {
-          expectDateFormatAs(isoStringWithoutTime, pattern, isoStringWithoutTimeFixtures[pattern]);
-        });
+        if (!browserDetection.isOldChrome) {
+          Object.keys(isoStringWithoutTimeFixtures).forEach((pattern: string) => {
+            expectDateFormatAs(
+                isoStringWithoutTime, pattern, isoStringWithoutTimeFixtures[pattern]);
+          });
+        }
 
         expect(pipe.transform(date, 'Z')).toBeDefined();
       });
@@ -197,7 +202,7 @@ export function main() {
          () => expect(pipe.transform('2017-01-20T19:00:00+0000')).toEqual('Jan 20, 2017'));
 
       it('should remove bidi control characters',
-         () => expect(pipe.transform(date, 'MM/dd/yyyy').length).toEqual(10));
+         () => expect(pipe.transform(date, 'MM/dd/yyyy') !.length).toEqual(10));
     });
   });
 }

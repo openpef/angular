@@ -6,9 +6,12 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {Component, Directive, HostBinding, HostListener, Input, Output, Query, Type, resolveForwardRef, ɵReflectorReader, ɵmerge as merge, ɵreflector, ɵstringify as stringify} from '@angular/core';
+import {Component, Directive, HostBinding, HostListener, Input, Output, Query, Type, resolveForwardRef, ɵstringify as stringify} from '@angular/core';
+
+import {CompileReflector} from './compile_reflector';
 import {CompilerInjectable} from './injectable';
 import {splitAtColon} from './util';
+
 
 
 /*
@@ -20,7 +23,7 @@ import {splitAtColon} from './util';
  */
 @CompilerInjectable()
 export class DirectiveResolver {
-  constructor(private _reflector: ɵReflectorReader = ɵreflector) {}
+  constructor(private _reflector: CompileReflector) {}
 
   isDirective(type: Type<any>) {
     const typeMetadata = this._reflector.annotations(resolveForwardRef(type));
@@ -30,7 +33,10 @@ export class DirectiveResolver {
   /**
    * Return {@link Directive} for a given `Type`.
    */
-  resolve(type: Type<any>, throwIfNotFound = true): Directive {
+  resolve(type: Type<any>): Directive;
+  resolve(type: Type<any>, throwIfNotFound: true): Directive;
+  resolve(type: Type<any>, throwIfNotFound: boolean): Directive|null;
+  resolve(type: Type<any>, throwIfNotFound = true): Directive|null {
     const typeMetadata = this._reflector.annotations(resolveForwardRef(type));
     if (typeMetadata) {
       const metadata = findLast(typeMetadata, isDirectiveMetadata);
@@ -100,7 +106,7 @@ export class DirectiveResolver {
     return this._merge(dm, inputs, outputs, host, queries, directiveType);
   }
 
-  private _extractPublicName(def: string) { return splitAtColon(def, [null, def])[1].trim(); }
+  private _extractPublicName(def: string) { return splitAtColon(def, [null !, def])[1].trim(); }
 
   private _dedupeBindings(bindings: string[]): string[] {
     const names = new Set<string>();
@@ -124,8 +130,8 @@ export class DirectiveResolver {
         this._dedupeBindings(directive.inputs ? directive.inputs.concat(inputs) : inputs);
     const mergedOutputs =
         this._dedupeBindings(directive.outputs ? directive.outputs.concat(outputs) : outputs);
-    const mergedHost = directive.host ? merge(directive.host, host) : host;
-    const mergedQueries = directive.queries ? merge(directive.queries, queries) : queries;
+    const mergedHost = directive.host ? {...directive.host, ...host} : host;
+    const mergedQueries = directive.queries ? {...directive.queries, ...queries} : queries;
 
     if (directive instanceof Component) {
       return new Component({
@@ -166,7 +172,7 @@ function isDirectiveMetadata(type: any): type is Directive {
   return type instanceof Directive;
 }
 
-export function findLast<T>(arr: T[], condition: (value: T) => boolean): T {
+export function findLast<T>(arr: T[], condition: (value: T) => boolean): T|null {
   for (let i = arr.length - 1; i >= 0; i--) {
     if (condition(arr[i])) {
       return arr[i];

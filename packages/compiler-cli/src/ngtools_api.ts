@@ -32,9 +32,10 @@ export interface NgTools_InternalApi_NG2_CodeGen_Options {
   angularCompilerOptions: AngularCompilerOptions;
 
   // i18n options.
-  i18nFormat: string;
-  i18nFile: string;
-  locale: string;
+  i18nFormat?: string;
+  i18nFile?: string;
+  locale?: string;
+  missingTranslation?: string;
 
   readResource: (fileName: string) => Promise<string>;
 
@@ -58,7 +59,7 @@ export interface NgTools_InternalApi_NG2_ExtractI18n_Options {
   program: ts.Program;
   host: ts.CompilerHost;
   angularCompilerOptions: AngularCompilerOptions;
-  i18nFormat: string;
+  i18nFormat?: string;
   readResource: (fileName: string) => Promise<string>;
   // Every new property under this line should be optional.
   locale?: string;
@@ -78,36 +79,39 @@ class CustomLoaderModuleResolutionHostAdapter extends ModuleResolutionHostAdapte
   readResource(path: string) { return this._readResource(path); }
 }
 
-
 /**
  * @internal
- * @private
  */
 export class NgTools_InternalApi_NG_2 {
   /**
    * @internal
-   * @private
    */
-  static codeGen(options: NgTools_InternalApi_NG2_CodeGen_Options): Promise<void> {
+  static codeGen(options: NgTools_InternalApi_NG2_CodeGen_Options): Promise<any> {
     const hostContext: CompilerHostContext =
         new CustomLoaderModuleResolutionHostAdapter(options.readResource, options.host);
+
     const cliOptions: NgcCliOptions = {
-      i18nFormat: options.i18nFormat,
-      i18nFile: options.i18nFile,
-      locale: options.locale,
+      i18nFormat: options.i18nFormat !,
+      i18nFile: options.i18nFile !,
+      locale: options.locale !,
+      missingTranslation: options.missingTranslation !,
       basePath: options.basePath
     };
+    const ngOptions = options.angularCompilerOptions;
+    if (ngOptions.enableSummariesForJit === undefined) {
+      // default to false
+      ngOptions.enableSummariesForJit = false;
+    }
 
     // Create the Code Generator.
-    const codeGenerator = CodeGenerator.create(
-        options.angularCompilerOptions, cliOptions, options.program, options.host, hostContext);
+    const codeGenerator =
+        CodeGenerator.create(ngOptions, cliOptions, options.program, options.host, hostContext);
 
     return codeGenerator.codegen();
   }
 
   /**
    * @internal
-   * @private
    */
   static listLazyRoutes(options: NgTools_InternalApi_NG2_ListLazyRoutes_Options):
       NgTools_InternalApi_NG_2_LazyRouteMap {
@@ -124,7 +128,7 @@ export class NgTools_InternalApi_NG_2 {
     const symbolCache = new StaticSymbolCache();
     const summaryResolver = new AotSummaryResolver(ngCompilerHost, symbolCache);
     const symbolResolver = new StaticSymbolResolver(ngCompilerHost, symbolCache, summaryResolver);
-    const staticReflector = new StaticReflector(symbolResolver);
+    const staticReflector = new StaticReflector(summaryResolver, symbolResolver);
     const routeMap = listLazyRoutesOfModule(options.entryModule, ngCompilerHost, staticReflector);
 
     return Object.keys(routeMap).reduce(
@@ -137,9 +141,8 @@ export class NgTools_InternalApi_NG_2 {
 
   /**
    * @internal
-   * @private
    */
-  static extractI18n(options: NgTools_InternalApi_NG2_ExtractI18n_Options): Promise<void> {
+  static extractI18n(options: NgTools_InternalApi_NG2_ExtractI18n_Options): Promise<any> {
     const hostContext: CompilerHostContext =
         new CustomLoaderModuleResolutionHostAdapter(options.readResource, options.host);
 
@@ -148,6 +151,6 @@ export class NgTools_InternalApi_NG_2 {
     const extractor = Extractor.create(
         options.angularCompilerOptions, options.program, options.host, locale, hostContext);
 
-    return extractor.extract(options.i18nFormat, options.outFile || null);
+    return extractor.extract(options.i18nFormat !, options.outFile || null);
   }
 }

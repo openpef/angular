@@ -32,7 +32,7 @@ export class FirefoxDriverExtension extends WebDriverExtension {
     return this._driver.executeScript('window.markStart("' + name + '");');
   }
 
-  timeEnd(name: string, restartName: string = null): Promise<any> {
+  timeEnd(name: string, restartName: string|null = null): Promise<any> {
     let script = 'window.markEnd("' + name + '");';
     if (restartName != null) {
       script += 'window.markStart("' + restartName + '");';
@@ -40,7 +40,7 @@ export class FirefoxDriverExtension extends WebDriverExtension {
     return this._driver.executeScript(script);
   }
 
-  readPerfLog(): Promise<PerfLogEvent> {
+  readPerfLog(): Promise<PerfLogEvent[]> {
     return this._driver.executeAsyncScript('var cb = arguments[0]; window.getProfile(cb);');
   }
 

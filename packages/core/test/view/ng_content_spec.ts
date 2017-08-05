@@ -10,7 +10,7 @@ import {Injector, RenderComponentType, RootRenderer, Sanitizer, SecurityContext,
 import {DebugContext, NodeDef, NodeFlags, RootData, Services, ViewData, ViewDefinition, ViewDefinitionFactory, ViewFlags, ViewHandleEventFn, ViewUpdateFn, anchorDef, asElementData, asProviderData, asTextData, attachEmbeddedView, detachEmbeddedView, directiveDef, elementDef, ngContentDef, rootRenderNodes, textDef, viewDef} from '@angular/core/src/view/index';
 import {getDOM} from '@angular/platform-browser/src/dom/dom_adapter';
 
-import {createRootView, isBrowser} from './helper';
+import {createEmbeddedView, createRootView, isBrowser} from './helper';
 
 export function main() {
   describe(`View NgContent`, () => {
@@ -31,9 +31,9 @@ export function main() {
 
       return [
         elementDef(
-            NodeFlags.None, null, null, 1 + contentNodes.length, 'acomp', null, null, null, null,
-            () => aCompViewDef),
-        directiveDef(NodeFlags.Component, null, 0, AComp, []), ...contentNodes
+            NodeFlags.None, null !, null !, 1 + contentNodes.length, 'acomp', null !, null !,
+            null !, null !, () => aCompViewDef),
+        directiveDef(NodeFlags.Component, null !, 0, AComp, []), ...contentNodes
       ];
     }
 
@@ -46,14 +46,15 @@ export function main() {
 
     it('should create ng-content nodes without parents', () => {
       const {view, rootNodes} = createAndGetRootNodes(
-          compViewDef(hostElDef([textDef(0, ['a'])], [ngContentDef(null, 0)])));
+          compViewDef(hostElDef([textDef(0, ['a'])], [ngContentDef(null !, 0)])));
 
       expect(getDOM().firstChild(rootNodes[0])).toBe(asTextData(view, 2).renderText);
     });
 
     it('should create views with multiple root ng-content nodes', () => {
       const {view, rootNodes} = createAndGetRootNodes(compViewDef(hostElDef(
-          [textDef(0, ['a']), textDef(1, ['b'])], [ngContentDef(null, 0), ngContentDef(null, 1)])));
+          [textDef(0, ['a']), textDef(1, ['b'])],
+          [ngContentDef(null !, 0), ngContentDef(null !, 1)])));
 
       expect(getDOM().childNodes(rootNodes[0])[0]).toBe(asTextData(view, 2).renderText);
       expect(getDOM().childNodes(rootNodes[0])[1]).toBe(asTextData(view, 3).renderText);
@@ -62,7 +63,7 @@ export function main() {
     it('should create ng-content nodes with parents', () => {
       const {view, rootNodes} = createAndGetRootNodes(compViewDef(hostElDef(
           [textDef(0, ['a'])],
-          [elementDef(NodeFlags.None, null, null, 1, 'div'), ngContentDef(null, 0)])));
+          [elementDef(NodeFlags.None, null !, null !, 1, 'div'), ngContentDef(null !, 0)])));
 
       expect(getDOM().firstChild(getDOM().firstChild(rootNodes[0])))
           .toBe(asTextData(view, 2).renderText);
@@ -71,7 +72,7 @@ export function main() {
     it('should reproject ng-content nodes', () => {
       const {view, rootNodes} = createAndGetRootNodes(compViewDef(
           hostElDef([textDef(0, ['a'])], hostElDef([ngContentDef(0, 0)], [
-                      elementDef(NodeFlags.None, null, null, 1, 'span'), ngContentDef(null, 0)
+                      elementDef(NodeFlags.None, null !, null !, 1, 'span'), ngContentDef(null !, 0)
                     ]))));
       expect(getDOM().firstChild(getDOM().firstChild(getDOM().firstChild(rootNodes[0]))))
           .toBe(asTextData(view, 2).renderText);
@@ -84,42 +85,53 @@ export function main() {
         }
       }
 
-      const {view, rootNodes} = createAndGetRootNodes(compViewDef(hostElDef(
-          [
-            anchorDef(
-                NodeFlags.EmbeddedViews, null, 0, 1, null, embeddedViewDef([textDef(null, ['a'])])),
-            directiveDef(
-                NodeFlags.None, null, 0, CreateViewService, [TemplateRef, ViewContainerRef])
-          ],
-          [elementDef(NodeFlags.None, null, null, 1, 'div'), ngContentDef(null, 0)])));
+      const {view, rootNodes} =
+          createAndGetRootNodes(
+              compViewDef(
+                  hostElDef(
+                      [
+                        anchorDef(
+                            NodeFlags.EmbeddedViews, null !, 0, 1, null !,
+                            embeddedViewDef([textDef(null !, ['a'])])),
+                        directiveDef(
+                            NodeFlags.None, null !, 0, CreateViewService,
+                            [TemplateRef, ViewContainerRef])
+                      ],
+                      [
+                        elementDef(NodeFlags.None, null !, null !, 1, 'div'),
+                        ngContentDef(null !, 0)
+                      ])));
 
       const anchor = asElementData(view, 2);
       expect((getDOM().childNodes(getDOM().firstChild(rootNodes[0]))[0]))
           .toBe(anchor.renderElement);
-      const embeddedView = anchor.viewContainer._embeddedViews[0];
+      const embeddedView = anchor.viewContainer !._embeddedViews[0];
       expect((getDOM().childNodes(getDOM().firstChild(rootNodes[0]))[1]))
           .toBe(asTextData(embeddedView, 0).renderText);
     });
 
     it('should include projected nodes when attaching / detaching embedded views', () => {
       const {view, rootNodes} = createAndGetRootNodes(compViewDef(hostElDef([textDef(0, ['a'])], [
-        elementDef(NodeFlags.None, null, null, 1, 'div'),
-        anchorDef(NodeFlags.EmbeddedViews, null, 0, 0, null, embeddedViewDef([
-                    ngContentDef(null, 0),
+        elementDef(NodeFlags.None, null !, null !, 1, 'div'),
+        anchorDef(NodeFlags.EmbeddedViews, null !, 0, 0, null !, embeddedViewDef([
+                    ngContentDef(null !, 0),
                     // The anchor would be added by the compiler after the ngContent
-                    anchorDef(NodeFlags.None, null, null, 0),
+                    anchorDef(NodeFlags.None, null !, null !, 0),
                   ])),
       ])));
 
       const componentView = asElementData(view, 0).componentView;
-      const view0 = Services.createEmbeddedView(componentView, componentView.def.nodes[1]);
+      const rf = componentView.root.rendererFactory;
+      const view0 = createEmbeddedView(componentView, componentView.def.nodes[1]);
 
       attachEmbeddedView(view, asElementData(componentView, 1), 0, view0);
       expect(getDOM().childNodes(getDOM().firstChild(rootNodes[0])).length).toBe(3);
       expect(getDOM().childNodes(getDOM().firstChild(rootNodes[0]))[1])
           .toBe(asTextData(view, 2).renderText);
 
+      rf.begin !();
       detachEmbeddedView(asElementData(componentView, 1), 0);
+      rf.end !();
       expect(getDOM().childNodes(getDOM().firstChild(rootNodes[0])).length).toBe(1);
     });
 
@@ -127,7 +139,7 @@ export function main() {
       it('should use root projectable nodes', () => {
         const projectableNodes = [[document.createTextNode('a')], [document.createTextNode('b')]];
         const view = createRootView(
-            compViewDef(hostElDef([], [ngContentDef(null, 0), ngContentDef(null, 1)])), {},
+            compViewDef(hostElDef([], [ngContentDef(null !, 0), ngContentDef(null !, 1)])), {},
             projectableNodes);
         const rootNodes = rootRenderNodes(view);
 

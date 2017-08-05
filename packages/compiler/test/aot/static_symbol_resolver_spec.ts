@@ -283,6 +283,31 @@ describe('StaticSymbolResolver', () => {
     ]);
   });
 
+  it('should only use the arity for classes from libraries without summaries', () => {
+    init({
+      '/test.d.ts': [{
+        '__symbolic': 'module',
+        'version': 3,
+        'metadata': {
+          'AParam': {__symbolic: 'class'},
+          'AClass': {
+            __symbolic: 'class',
+            arity: 1,
+            members: {
+              __ctor__: [{
+                __symbolic: 'constructor',
+                parameters: [symbolCache.get('/test.d.ts', 'AParam')]
+              }]
+            }
+          }
+        }
+      }]
+    });
+
+    expect(symbolResolver.resolveSymbol(symbolCache.get('/test.d.ts', 'AClass')).metadata)
+        .toEqual({__symbolic: 'class', arity: 1});
+  });
+
   it('should be able to trace a named export', () => {
     const symbol = symbolResolver
                        .resolveSymbol(symbolResolver.getSymbolByModule(
@@ -347,7 +372,7 @@ export class MockSummaryResolver implements SummaryResolver<StaticSymbol> {
     symbol: StaticSymbol,
     importAs: StaticSymbol
   }[] = []) {}
-
+  addSummary(summary: Summary<StaticSymbol>) { this.summaries.push(summary); };
   resolveSummary(reference: StaticSymbol): Summary<StaticSymbol> {
     return this.summaries.find(summary => summary.symbol === reference);
   };
@@ -357,7 +382,7 @@ export class MockSummaryResolver implements SummaryResolver<StaticSymbol> {
   }
   getImportAs(symbol: StaticSymbol): StaticSymbol {
     const entry = this.importAs.find(entry => entry.symbol === symbol);
-    return entry ? entry.importAs : undefined;
+    return entry ? entry.importAs : undefined !;
   }
 
   isLibraryFile(filePath: string): boolean { return filePath.endsWith('.d.ts'); }
@@ -404,14 +429,21 @@ export class MockStaticSymbolResolverHost implements StaticSymbolResolverHost {
     }
 
     if (modulePath.indexOf('.') === 0) {
-      const baseName = pathTo(containingFile, modulePath);
+      const baseName = pathTo(containingFile !, modulePath);
       const tsName = baseName + '.ts';
       if (this._getMetadataFor(tsName)) {
         return tsName;
       }
       return baseName + '.d.ts';
     }
+    if (modulePath == 'unresolved') {
+      return undefined !;
+    }
     return '/tmp/' + modulePath + '.d.ts';
+  }
+
+  fileNameToModuleName(filePath: string, containingFile: string) {
+    return filePath.replace(/(\.ts|\.d\.ts|\.js|\.jsx|\.tsx)$/, '');
   }
 
   getMetadataFor(moduleId: string): any { return this._getMetadataFor(moduleId); }
@@ -424,8 +456,13 @@ export class MockStaticSymbolResolverHost implements StaticSymbolResolverHost {
             filePath, this.data[filePath], ts.ScriptTarget.ES5, /* setParentNodes */ true);
         const diagnostics: ts.Diagnostic[] = (<any>sf).parseDiagnostics;
         if (diagnostics && diagnostics.length) {
-          const errors = diagnostics.map(d => `(${d.start}-${d.start+d.length}): ${d.messageText}`)
-                             .join('\n   ');
+          const errors =
+              diagnostics
+                  .map(d => {
+                    const {line, character} = ts.getLineAndCharacterOfPosition(d.file !, d.start !);
+                    return `(${line}:${character}): ${d.messageText}`;
+                  })
+                  .join('\n');
           throw Error(`Error encountered during parse of file ${filePath}\n${errors}`);
         }
         return [this.collector.getMetadata(sf)];

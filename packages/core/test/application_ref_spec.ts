@@ -30,11 +30,11 @@ export function main() {
 
     beforeEach(() => { mockConsole = new MockConsole(); });
 
-    function createRootEl() {
+    function createRootEl(selector = 'bootstrap-app') {
       const doc = TestBed.get(DOCUMENT);
       const rootEl = <HTMLElement>getDOM().firstChild(
-          getDOM().content(getDOM().createTemplate(`<bootstrap-app></bootstrap-app>`)));
-      const oldRoots = getDOM().querySelectorAll(doc, 'bootstrap-app');
+          getDOM().content(getDOM().createTemplate(`<${selector}></${selector}>`)));
+      const oldRoots = getDOM().querySelectorAll(doc, selector);
       for (let i = 0; i < oldRoots.length; i++) {
         getDOM().remove(oldRoots[i]);
       }
@@ -45,7 +45,7 @@ export function main() {
 
     function createModule(providers?: any[]): Type<any>;
     function createModule(options: CreateModuleOptions): Type<any>;
-    function createModule(providersOrOptions: any[] | CreateModuleOptions): Type<any> {
+    function createModule(providersOrOptions: any[] | CreateModuleOptions | undefined): Type<any> {
       let options: CreateModuleOptions = {};
       if (providersOrOptions instanceof Array) {
         options = {providers: providersOrOptions};
@@ -92,8 +92,37 @@ export function main() {
          createRootEl();
          const modFactory = compiler.compileModuleSync(SomeModule);
          const module = modFactory.create(TestBed);
-         const cmpFactory = module.componentFactoryResolver.resolveComponentFactory(SomeComponent);
+         const cmpFactory =
+             module.componentFactoryResolver.resolveComponentFactory(SomeComponent) !;
          const component = app.bootstrap(cmpFactory);
+
+         // The component should see the child module providers
+         expect(component.injector.get('hello')).toEqual('component');
+       })));
+
+    it('should bootstrap a component with a custom selector',
+       async(inject([ApplicationRef, Compiler], (app: ApplicationRef, compiler: Compiler) => {
+         @Component({
+           selector: 'bootstrap-app',
+           template: '',
+         })
+         class SomeComponent {
+         }
+
+         @NgModule({
+           providers: [{provide: 'hello', useValue: 'component'}],
+           declarations: [SomeComponent],
+           entryComponents: [SomeComponent],
+         })
+         class SomeModule {
+         }
+
+         createRootEl('custom-selector');
+         const modFactory = compiler.compileModuleSync(SomeModule);
+         const module = modFactory.create(TestBed);
+         const cmpFactory =
+             module.componentFactoryResolver.resolveComponentFactory(SomeComponent) !;
+         const component = app.bootstrap(cmpFactory, 'custom-selector');
 
          // The component should see the child module providers
          expect(component.injector.get('hello')).toEqual('component');
@@ -102,20 +131,33 @@ export function main() {
     describe('ApplicationRef', () => {
       beforeEach(() => { TestBed.configureTestingModule({imports: [createModule()]}); });
 
-      it('should throw when reentering tick', inject([ApplicationRef], (ref: ApplicationRef_) => {
-           const view = jasmine.createSpyObj('view', ['detach', 'attachToAppRef']);
-           const viewRef = jasmine.createSpyObj(
-               'viewRef', ['detectChanges', 'detachFromAppRef', 'attachToAppRef']);
-           viewRef.internalView = view;
-           view.ref = viewRef;
-           try {
-             ref.attachView(viewRef);
-             viewRef.detectChanges.and.callFake(() => ref.tick());
-             expect(() => ref.tick()).toThrowError('ApplicationRef.tick is called recursively');
-           } finally {
-             ref.detachView(viewRef);
-           }
-         }));
+      it('should throw when reentering tick', () => {
+        @Component({template: '{{reenter()}}'})
+        class ReenteringComponent {
+          reenterCount = 1;
+          reenterErr: any;
+
+          constructor(private appRef: ApplicationRef) {}
+
+          reenter() {
+            if (this.reenterCount--) {
+              try {
+                this.appRef.tick();
+              } catch (e) {
+                this.reenterErr = e;
+              }
+            }
+          }
+        }
+
+        const fixture = TestBed.configureTestingModule({declarations: [ReenteringComponent]})
+                            .createComponent(ReenteringComponent);
+        const appRef = TestBed.get(ApplicationRef) as ApplicationRef;
+        appRef.attachView(fixture.componentRef.hostView);
+        appRef.tick();
+        expect(fixture.componentInstance.reenterErr.message)
+            .toBe('ApplicationRef.tick is called recursively');
+      });
 
       describe('APP_BOOTSTRAP_LISTENER', () => {
         let capturedCompRefs: ComponentRef<any>[];
@@ -183,11 +225,9 @@ export function main() {
                    [{provide: APP_INITIALIZER, useValue: () => { throw 'Test'; }, multi: true}]))
                .then(() => expect(false).toBe(true), (e) => {
                  expect(e).toBe('Test');
-                 // Note: if the modules throws an error during construction,
-                 // we don't have an injector and therefore no way of
-                 // getting the exception handler. So
-                 // the error is only rethrown but not logged via the exception handler.
-                 expect(mockConsole.res).toEqual([]);
+                 // Error rethrown will be seen by the exception handler since it's after
+                 // construction.
+                 expect(mockConsole.res[0].join('#')).toEqual('ERROR#Test');
                });
          }));
 
@@ -280,11 +320,9 @@ export function main() {
            const moduleFactory = compilerFactory.createCompiler().compileModuleSync(createModule(
                [{provide: APP_INITIALIZER, useValue: () => { throw 'Test'; }, multi: true}]));
            expect(() => defaultPlatform.bootstrapModuleFactory(moduleFactory)).toThrow('Test');
-           // Note: if the modules throws an error during construction,
-           // we don't have an injector and therefore no way of
-           // getting the exception handler. So
-           // the error is only rethrown but not logged via the exception handler.
-           expect(mockConsole.res).toEqual([]);
+           // Error rethrown will be seen by the exception handler since it's after
+           // construction.
+           expect(mockConsole.res[0].join('#')).toEqual('ERROR#Test');
          }));
 
       it('should rethrow promise errors even if the exceptionHandler is not rethrowing',
@@ -388,7 +426,7 @@ export function main() {
            vc.insert(hostView);
            expect(() => appRef.attachView(hostView))
                .toThrowError('This view is already attached to a ViewContainer!');
-           hostView = vc.detach(0);
+           hostView = vc.detach(0) !;
 
            appRef.attachView(hostView);
            expect(() => vc.insert(hostView))
@@ -537,6 +575,14 @@ export function main() {
 
 class MockConsole {
   res: any[][] = [];
-  log(...args: any[]): void { this.res.push(args); }
-  error(...args: any[]): void { this.res.push(args); }
+  log(...args: any[]): void {
+    // Logging from ErrorHandler should run outside of the Angular Zone.
+    NgZone.assertNotInAngularZone();
+    this.res.push(args);
+  }
+  error(...args: any[]): void {
+    // Logging from ErrorHandler should run outside of the Angular Zone.
+    NgZone.assertNotInAngularZone();
+    this.res.push(args);
+  }
 }

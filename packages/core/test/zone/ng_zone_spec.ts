@@ -31,6 +31,8 @@ const resolvedPromise = Promise.resolve(null);
 function logOnError() {
   _zone.onError.subscribe({
     next: (error: any) => {
+      // Error handler should run outside of the Angular zone.
+      NgZone.assertNotInAngularZone();
       _errors.push(error);
       _traces.push(error.stack);
     }
@@ -214,6 +216,13 @@ function commonTests() {
     it('should return the body return value from run',
        inject([AsyncTestCompleter], (async: AsyncTestCompleter) => {
          macroTask(() => { expect(_zone.run(() => 6)).toEqual(6); });
+
+         macroTask(() => { async.done(); });
+       }), testTimeout);
+
+    it('should return the body return value from runTask',
+       inject([AsyncTestCompleter], (async: AsyncTestCompleter) => {
+         macroTask(() => { expect(_zone.runTask(() => 6)).toEqual(6); });
 
          macroTask(() => { async.done(); });
        }), testTimeout);
@@ -468,12 +477,12 @@ function commonTests() {
 
     it('should call onUnstable and onMicrotaskEmpty when an inner microtask is scheduled from outside angular',
        inject([AsyncTestCompleter], (async: AsyncTestCompleter) => {
-         let resolve: (result: string) => void;
-         let promise: Promise<string>;
+         let resolve: (result: string | null) => void;
+         let promise: Promise<string|null>;
 
          macroTask(() => {
            NgZone.assertNotInAngularZone();
-           promise = new Promise(res => { resolve = res; });
+           promise = new Promise<string|null>(res => { resolve = res; });
          });
 
          runNgZoneNoLog(() => {
@@ -637,15 +646,15 @@ function commonTests() {
 
     it('should call onUnstable and onMicrotaskEmpty before and after each turn, respectively',
        inject([AsyncTestCompleter], (async: AsyncTestCompleter) => {
-         let aResolve: (result: string) => void;
+         let aResolve: (result: string | null) => void;
          let aPromise: Promise<string>;
-         let bResolve: (result: string) => void;
+         let bResolve: (result: string | null) => void;
          let bPromise: Promise<string>;
 
          runNgZoneNoLog(() => {
            macroTask(() => {
-             aPromise = new Promise(res => { aResolve = res; });
-             bPromise = new Promise(res => { bResolve = res; });
+             aPromise = new Promise<string|null>(res => { aResolve = res; });
+             bPromise = new Promise<string|null>(res => { bResolve = res; });
              aPromise.then(_log.fn('a then'));
              bPromise.then(_log.fn('b then'));
              _log.add('run start');
@@ -763,7 +772,7 @@ function commonTests() {
       }));
 
       it('should fakeAsync even if the NgZone was created outside.', fakeAsync(() => {
-           let result: string = null;
+           let result: string = null !;
            // try to escape the current fakeAsync zone by using NgZone which was created outside.
            ngZone.run(() => {
              Promise.resolve('works').then((v) => result = v);
@@ -776,7 +785,7 @@ function commonTests() {
         let asyncResult: string;
         const waitLongerThenTestFrameworkAsyncTimeout = 5;
 
-        beforeEach(() => { asyncResult = null; });
+        beforeEach(() => { asyncResult = null !; });
 
         it('should async even if the NgZone was created outside.', async(() => {
              // try to escape the current async zone by using NgZone which was created outside.

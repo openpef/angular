@@ -1,4 +1,4 @@
-'use strict'; // necessary for es6 output in node 
+'use strict'; // necessary for es6 output in node
 
 import { browser, element, by } from 'protractor';
 
@@ -15,7 +15,7 @@ describe('Attribute directives', function () {
   });
 
   it('should be able to select green highlight', function () {
-    let highlightedEle = element(by.cssContainingText('p', 'Highlight me'));
+    let highlightedEle = element(by.cssContainingText('p', 'Highlight me!'));
     let lightGreen = 'rgba(144, 238, 144, 1)';
 
     expect(highlightedEle.getCssValue('background-color')).not.toEqual(lightGreen);
